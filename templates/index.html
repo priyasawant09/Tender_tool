@@ -405,478 +405,343 @@ The more detailed the description, the better the AI matching accuracy."
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const cvUploadForm = document.getElementById('cv-upload-form');
-            const cvFilesInput = document.getElementById('cv-files');
-            const fileList = document.getElementById('file-list');
-            const uploadStatus = document.getElementById('upload-status');
-            const uploadZone = document.getElementById('upload-zone');
-            const uploadProgress = document.getElementById('upload-progress');
-            
-            const jdForm = document.getElementById('jd-form');
-            const jdInput = document.getElementById('job-description');
-            const matchButton = document.getElementById('match-button');
-            const charCount = document.getElementById('char-count');
-            
-            const resultsSection = document.getElementById('results-section');
-            const loader = document.getElementById('loader');
-            const resultsOutput = document.getElementById('results-output');
-            const resultsSummary = document.getElementById('results-summary');
+    document.addEventListener('DOMContentLoaded', function() {
+        const cvUploadForm = document.getElementById('cv-upload-form');
+        const cvFilesInput = document.getElementById('cv-files');
+        const fileList = document.getElementById('file-list');
+        const uploadStatus = document.getElementById('upload-status');
+        const uploadZone = document.getElementById('upload-zone');
+        const uploadProgress = document.getElementById('upload-progress');
+        
+        const jdForm = document.getElementById('jd-form');
+        const jdInput = document.getElementById('job-description');
+        const matchButton = document.getElementById('match-button');
+        const charCount = document.getElementById('char-count');
+        
+        const resultsSection = document.getElementById('results-section');
+        const loader = document.getElementById('loader');
+        const resultsOutput = document.getElementById('results-output');
+        const resultsSummary = document.getElementById('results-summary');
 
-            // Character counter for job description
-            jdInput.addEventListener('input', function() {
-                const length = this.value.length;
-                charCount.textContent = `${length.toLocaleString()} characters`;
-                
-                if (length > 500) {
-                    charCount.classList.add('text-green-600');
-                    charCount.classList.remove('text-gray-400');
+        // Character counter for job description
+        jdInput.addEventListener('input', function() {
+            const length = this.value.length;
+            charCount.textContent = `${length.toLocaleString()} characters`;
+            
+            if (length > 500) {
+                charCount.classList.add('text-green-600');
+                charCount.classList.remove('text-gray-400');
+            } else {
+                charCount.classList.add('text-gray-400');
+                charCount.classList.remove('text-green-600');
+            }
+        });
+
+        // Disable CV upload since app.py uses cvs_folder
+        cvUploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            showNotification('CVs are processed from the server folder. Proceed to enter job description.', 'info');
+            updateStepProgress(2);
+            scrollToSection('jd-section');
+        });
+
+        // Enhanced Job Description Submission
+        jdForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const jobDescription = jdInput.value.trim();
+
+            if (!jobDescription) {
+                showNotification('Please enter a job description.', 'error');
+                return;
+            }
+
+            if (jobDescription.length < 100) {
+                showNotification('Please provide a more detailed job description (minimum 100 characters).', 'warning');
+                return;
+            }
+
+            resultsSection.classList.remove('hidden');
+            loader.classList.remove('hidden');
+            resultsOutput.innerHTML = '';
+            resultsSummary.classList.add('hidden');
+            matchButton.disabled = true;
+            matchButton.innerHTML = `
+                <span class="flex items-center justify-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Analyzing CVs...
+                </span>
+            `;
+
+            updateStepProgress(3);
+            scrollToSection('results-section');
+
+            try {
+                const response = await fetch('/match-cvs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ job_description: jobDescription })
+                });
+
+                const results = await response.json();
+
+                if (response.ok) {
+                    displayResults(results);
+                    showNotification('Analysis complete! Results are ready.', 'success');
                 } else {
-                    charCount.classList.add('text-gray-400');
-                    charCount.classList.remove('text-green-600');
+                    throw new Error(results.error || 'Failed to get matches.');
                 }
-            });
 
-            // Enhanced drag and drop functionality
-            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-                uploadZone.addEventListener(eventName, preventDefaults, false);
-                document.body.addEventListener(eventName, preventDefaults, false);
-            });
-
-            ['dragenter', 'dragover'].forEach(eventName => {
-                uploadZone.addEventListener(eventName, highlight, false);
-            });
-
-            ['dragleave', 'drop'].forEach(eventName => {
-                uploadZone.addEventListener(eventName, unhighlight, false);
-            });
-
-            uploadZone.addEventListener('drop', handleDrop, false);
-
-            function preventDefaults(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-
-            function highlight(e) {
-                uploadZone.classList.add('dragover');
-            }
-
-            function unhighlight(e) {
-                uploadZone.classList.remove('dragover');
-            }
-
-            function handleDrop(e) {
-                const dt = e.dataTransfer;
-                const files = dt.files;
-                cvFilesInput.files = files;
-                displayFiles(files);
-            }
-
-            // Handle file input changes
-            cvFilesInput.addEventListener('change', function() {
-                displayFiles(this.files);
-            });
-
-            function displayFiles(files) {
-                fileList.innerHTML = '';
-                if (files.length > 0) {
-                    const fileCards = Array.from(files).map(file => {
-                        const size = (file.size / 1024 / 1024).toFixed(2);
-                        const icon = file.type.includes('pdf') ? 
-                            `<svg class="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
-                            </svg>` :
-                            `<svg class="w-8 h-8 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path>
-                            </svg>`;
-                        
-                        return `
-                            <div class="flex items-center p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl border border-gray-200 bounce-in">
-                                <div class="flex-shrink-0 mr-4">${icon}</div>
-                                <div class="flex-1 min-w-0">
-                                    <p class="font-semibold text-gray-900 truncate">${file.name}</p>
-                                    <p class="text-sm text-gray-500">${size} MB • ${file.type.split('/')[1].toUpperCase()}</p>
-                                </div>
-                                <div class="flex-shrink-0">
-                                    <div class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                    
-                    fileList.innerHTML = `
-                        <div class="space-y-3">
-                            <h4 class="font-semibold text-gray-700 flex items-center">
-                                <svg class="w-5 h-5 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                </svg>
-                                ${files.length} file${files.length > 1 ? 's' : ''} selected
-                            </h4>
-                            ${fileCards}
+            } catch (error) {
+                resultsOutput.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <div class="mx-auto w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                            <svg class="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
                         </div>
-                    `;
-                }
-            }
-
-            // Enhanced CV Upload with progress
-            cvUploadForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const formData = new FormData();
-                const files = cvFilesInput.files;
-
-                if (files.length === 0) {
-                    showNotification('Please select at least one CV file.', 'error');
-                    return;
-                }
-
-                for (let i = 0; i < files.length; i++) {
-                    formData.append('files[]', files[i]);
-                }
-
-                // Show progress
-                uploadProgress.classList.remove('hidden');
-                const progressBar = uploadProgress.querySelector('.progress-bar');
-                let progress = 0;
-                const progressInterval = setInterval(() => {
-                    progress += Math.random() * 30;
-                    if (progress > 90) progress = 90;
-                    progressBar.style.width = progress + '%';
-                }, 200);
-
-                try {
-                    const response = await fetch('/upload-cv', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    const result = await response.json();
-                    clearInterval(progressInterval);
-                    progressBar.style.width = '100%';
-
-                    setTimeout(() => {
-                        uploadProgress.classList.add('hidden');
-                        progressBar.style.width = '0%';
-                        
-                        if (response.ok) {
-                            showNotification(result.message, 'success');
-                            updateStepProgress(2);
-                        } else {
-                            throw new Error(result.error || 'An unknown error occurred.');
-                        }
-                    }, 500);
-
-                } catch (error) {
-                    clearInterval(progressInterval);
-                    uploadProgress.classList.add('hidden');
-                    progressBar.style.width = '0%';
-                    showNotification('Error: ' + error.message, 'error');
-                }
-            });
-
-            // Enhanced Job Description Submission
-            jdForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const jobDescription = jdInput.value.trim();
-
-                if (!jobDescription) {
-                    showNotification('Please enter a job description.', 'error');
-                    return;
-                }
-
-                if (jobDescription.length < 100) {
-                    showNotification('Please provide a more detailed job description (minimum 100 characters).', 'warning');
-                    return;
-                }
-
-                resultsSection.classList.remove('hidden');
-                loader.classList.remove('hidden');
-                resultsOutput.innerHTML = '';
-                resultsSummary.classList.add('hidden');
-                matchButton.disabled = true;
+                        <h3 class="text-xl font-semibold text-red-600 mb-2">Analysis Failed</h3>
+                        <p class="text-red-500">${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                loader.classList.add('hidden');
+                matchButton.disabled = false;
                 matchButton.innerHTML = `
                     <span class="flex items-center justify-center">
-                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
-                        Analyzing CVs...
+                        Find Perfect Matches
                     </span>
                 `;
+            }
+        });
 
-                updateStepProgress(3);
-
-                try {
-                    const response = await fetch('/match-cvs', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ job_description: jobDescription })
-                    });
-
-                    const results = await response.json();
-
-                    if (response.ok) {
-                        displayResults(results);
-                        showNotification('Analysis complete! Results are ready.', 'success');
-                    } else {
-                        throw new Error(results.error || 'Failed to get matches.');
-                    }
-
-                } catch (error) {
-                    resultsOutput.innerHTML = `
-                        <div class="col-span-full text-center py-12">
-                            <div class="mx-auto w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-4">
-                                <svg class="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                            </div>
-                            <h3 class="text-xl font-semibold text-red-600 mb-2">Analysis Failed</h3>
-                            <p class="text-red-500">${error.message}</p>
-                        </div>
-                    `;
-                } finally {
-                    loader.classList.add('hidden');
-                    matchButton.disabled = false;
-                    matchButton.innerHTML = `
-                        <span class="flex items-center justify-center">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+        function displayResults(results) {
+            resultsOutput.innerHTML = '';
+            
+            if (results.length === 0) {
+                resultsOutput.innerHTML = `
+                    <div class="col-span-full text-center py-16">
+                        <div class="mx-auto w-32 h-32 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-6">
+                            <svg class="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
-                            Find Perfect Matches
-                        </span>
-                    `;
-                }
-            });
-
-            function displayResults(results) {
-                resultsOutput.innerHTML = '';
-                
-                if (results.length === 0) {
-                    resultsOutput.innerHTML = `
-                        <div class="col-span-full text-center py-16">
-                            <div class="mx-auto w-32 h-32 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-6">
-                                <svg class="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                </svg>
-                            </div>
-                            <h3 class="text-2xl font-bold text-gray-700 mb-2">No Matching CVs Found</h3>
-                            <p class="text-gray-500 max-w-md mx-auto">Try adjusting your job description or upload different CV files for better results.</p>
                         </div>
-                    `;
-                    return;
-                }
+                        <h3 class="text-2xl font-bold text-gray-700 mb-2">No Matching CVs Found</h3>
+                        <p class="text-gray-500 max-w-md mx-auto">Try adjusting your job description or ensure CVs are available in the server folder.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Sort results by overall_score (highest first)
+            results.sort((a, b) => b.overall_score - a.overall_score);
+            
+            // Calculate summary statistics
+            const totalCvs = results.length;
+            const excellentMatches = results.filter(r => r.overall_score >= 8).length;
+            const goodMatches = results.filter(r => r.overall_score >= 5 && r.overall_score < 8).length;
+            const poorMatches = results.filter(r => r.overall_score < 5).length;
+            
+            // Update summary
+            document.getElementById('total-cvs').textContent = totalCvs;
+            document.getElementById('excellent-matches').textContent = excellentMatches;
+            document.getElementById('good-matches').textContent = goodMatches;
+            document.getElementById('poor-matches').textContent = poorMatches;
+            resultsSummary.classList.remove('hidden');
+            
+            results.forEach((result, index) => {
+                const scoreColor = getScoreColor(result.overall_score);
+                const scoreGradient = getScoreGradient(result.overall_score);
+                const rankBadge = getRankBadge(index + 1);
                 
-                // Sort results by score (highest first)
-                results.sort((a, b) => b.score - a.score);
+                const card = document.createElement('div');
+                card.className = 'result-card glass-effect rounded-2xl shadow-xl overflow-hidden bounce-in';
+                card.style.animationDelay = `${index * 0.1}s`;
                 
-                // Calculate summary statistics
-                const totalCvs = results.length;
-                const excellentMatches = results.filter(r => r.score >= 8).length;
-                const goodMatches = results.filter(r => r.score >= 5 && r.score < 8).length;
-                const poorMatches = results.filter(r => r.score < 5).length;
-                
-                // Update summary
-                document.getElementById('total-cvs').textContent = totalCvs;
-                document.getElementById('excellent-matches').textContent = excellentMatches;
-                document.getElementById('good-matches').textContent = goodMatches;
-                document.getElementById('poor-matches').textContent = poorMatches;
-                resultsSummary.classList.remove('hidden');
-                
-                results.forEach((result, index) => {
-                    const scoreColor = getScoreColor(result.score);
-                    const scoreGradient = getScoreGradient(result.score);
-                    const rankBadge = getRankBadge(index + 1);
-                    
-                    const card = document.createElement('div');
-                    card.className = 'result-card glass-effect rounded-2xl shadow-xl overflow-hidden bounce-in';
-                    card.style.animationDelay = `${index * 0.1}s`;
-                    
-                    card.innerHTML = `
-                        <div class="relative">
-                            ${rankBadge}
-                            <div class="p-6">
-                                <div class="flex items-start justify-between mb-4">
-                                    <div class="flex-1 min-w-0">
-                                        <h3 class="font-bold text-xl text-gray-900 truncate mb-1">${result.filename}</h3>
-                                        <div class="flex items-center space-x-2">
-                                            <div class="px-3 py-1 rounded-full text-xs font-bold ${scoreColor.bg} ${scoreColor.text}">
-                                                ${result.score}/10
-                                            </div>
-                                            <div class="text-sm text-gray-500">${getScoreLabel(result.score)}</div>
+                card.innerHTML = `
+                    <div class="relative">
+                        ${rankBadge}
+                        <div class="p-6">
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="flex-1 min-w-0">
+                                    <h3 class="font-bold text-xl text-gray-900 truncate mb-1">${result.filename}</h3>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="px-3 py-1 rounded-full text-xs font-bold ${scoreColor.bg} ${scoreColor.text}">
+                                            ${result.overall_score.toFixed(1)}/10
                                         </div>
+                                        <div class="text-sm text-gray-500">${getScoreLabel(result.overall_score)}</div>
                                     </div>
-                                </div>
-                                
-                                <!-- Score visualization -->
-                                <div class="mb-4">
-                                    <div class="flex justify-between text-sm text-gray-600 mb-1">
-                                        <span>Match Score</span>
-                                        <span>${result.score}/10</span>
-                                    </div>
-                                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                        <div class="h-full ${scoreGradient} rounded-full transition-all duration-1000 ease-out" style="width: ${result.score * 10}%"></div>
-                                    </div>
-                                </div>
-                                
-                                <div class="space-y-3">
-                                    <div>
-                                        <h4 class="font-semibold text-gray-700 flex items-center mb-2">
-                                            <svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
-                                            </svg>
-                                            AI Analysis
-                                        </h4>
-                                        <p class="text-gray-600 text-sm leading-relaxed">${result.explanation}</p>
-                                    </div>
-                                    
-                                    ${getScoreBreakdown(result.score)}
                                 </div>
                             </div>
+                            
+                            <!-- Score visualization -->
+                            <div class="mb-4">
+                                <div class="flex justify-between text-sm text-gray-600 mb-1">
+                                    <span>Overall Match Score</span>
+                                    <span>${result.overall_score.toFixed(1)}/10</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div class="h-full ${scoreGradient} rounded-full transition-all duration-1000 ease-out" style="width: ${result.overall_score * 10}%"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-3">
+                                ${getScoreBreakdown(result.details)}
+                            </div>
                         </div>
-                    `;
-                    
-                    resultsOutput.appendChild(card);
-                });
-            }
+                    </div>
+                `;
+                
+                resultsOutput.appendChild(card);
+            });
+        }
 
-            function getScoreColor(score) {
-                if (score >= 8) return { bg: 'bg-green-100', text: 'text-green-800' };
-                if (score >= 6) return { bg: 'bg-blue-100', text: 'text-blue-800' };
-                if (score >= 4) return { bg: 'bg-yellow-100', text: 'text-yellow-800' };
-                return { bg: 'bg-red-100', text: 'text-red-800' };
-            }
+        function getScoreColor(score) {
+            if (score >= 8) return { bg: 'bg-green-100', text: 'text-green-800' };
+            if (score >= 6) return { bg: 'bg-blue-100', text: 'text-blue-800' };
+            if (score >= 4) return { bg: 'bg-yellow-100', text: 'text-yellow-800' };
+            return { bg: 'bg-red-100', text: 'text-red-800' };
+        }
 
-            function getScoreGradient(score) {
-                if (score >= 8) return 'bg-gradient-to-r from-green-500 to-emerald-600';
-                if (score >= 6) return 'bg-gradient-to-r from-blue-500 to-indigo-600';
-                if (score >= 4) return 'bg-gradient-to-r from-yellow-500 to-orange-600';
-                return 'bg-gradient-to-r from-red-500 to-pink-600';
-            }
+        function getScoreGradient(score) {
+            if (score >= 8) return 'bg-gradient-to-r from-green-500 to-emerald-600';
+            if (score >= 6) return 'bg-gradient-to-r from-blue-500 to-indigo-600';
+            if (score >= 4) return 'bg-gradient-to-r from-yellow-500 to-orange-600';
+            return 'bg-gradient-to-r from-red-500 to-pink-600';
+        }
 
-            function getScoreLabel(score) {
-                if (score >= 8) return 'Excellent Match';
-                if (score >= 6) return 'Good Match';
-                if (score >= 4) return 'Fair Match';
-                return 'Poor Match';
-            }
+        function getScoreLabel(score) {
+            if (score >= 8) return 'Excellent Match';
+            if (score >= 6) return 'Good Match';
+            if (score >= 4) return 'Fair Match';
+            return 'Poor Match';
+        }
 
-            function getRankBadge(rank) {
-                if (rank <= 3) {
-                    const colors = ['from-yellow-400 to-yellow-600', 'from-gray-300 to-gray-500', 'from-orange-400 to-orange-600'];
-                    const icons = ['👑', '🥈', '🥉'];
-                    return `
-                        <div class="absolute top-4 right-4 bg-gradient-to-r ${colors[rank-1]} text-white px-3 py-1 rounded-full text-sm font-bold flex items-center space-x-1 shadow-lg">
-                            <span>${icons[rank-1]}</span>
-                            <span>#${rank}</span>
-                        </div>
-                    `;
-                }
+        function getRankBadge(rank) {
+            if (rank <= 3) {
+                const colors = ['from-yellow-400 to-yellow-600', 'from-gray-300 to-gray-500', 'from-orange-400 to-orange-600'];
+                const icons = ['👑', '🥈', '🥉'];
                 return `
-                    <div class="absolute top-4 right-4 bg-gradient-to-r from-gray-400 to-gray-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
-                        #${rank}
+                    <div class="absolute top-4 right-4 bg-gradient-to-r ${colors[rank-1]} text-white px-3 py-1 rounded-full text-sm font-bold flex items-center space-x-1 shadow-lg">
+                        <span>${icons[rank-1]}</span>
+                        <span>#${rank}</span>
                     </div>
                 `;
             }
+            return `
+                <div class="absolute top-4 right-4 bg-gradient-to-r from-gray-400 to-gray-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+                    #${rank}
+                </div>
+            `;
+        }
 
-            function getScoreBreakdown(score) {
-                const categories = [
-                    { name: 'Skills Match', score: Math.min(10, score + Math.random() * 2 - 1) },
-                    { name: 'Experience', score: Math.min(10, score + Math.random() * 2 - 1) },
-                    { name: 'Education', score: Math.min(10, score + Math.random() * 2 - 1) }
-                ];
+        function getScoreBreakdown(details) {
+            const categories = [
+                { name: 'Skills Match', score: details.skills.score, explanation: details.skills.explanation },
+                { name: 'Experience', score: details.experience.score, explanation: details.experience.explanation },
+                { name: 'Education', score: details.education.score, explanation: details.education.explanation },
+                { name: 'Projects', score: details.projects.score, explanation: details.projects.explanation }
+            ];
 
-                return `
-                    <div class="bg-gray-50 rounded-lg p-3">
-                        <h5 class="font-medium text-gray-700 mb-2 text-sm">Score Breakdown</h5>
-                        <div class="space-y-2">
-                            ${categories.map(cat => `
-                                <div class="flex justify-between items-center text-xs">
+            return `
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <h5 class="font-medium text-gray-700 mb-2 text-sm">Score Breakdown</h5>
+                    <div class="space-y-2">
+                        ${categories.map(cat => `
+                            <div>
+                                <div class="flex justify-between items-center text-xs mb-1">
                                     <span class="text-gray-600">${cat.name}</span>
                                     <div class="flex items-center space-x-2">
                                         <div class="w-16 bg-gray-200 rounded-full h-1.5">
-                                            <div class="bg-gradient-to-r from-blue-500 to-purple-600 h-1.5 rounded-full" style="width: ${cat.score * 10}%"></div>
+                                            <div class="h-1.5 ${getScoreGradient(cat.score)} rounded-full" style="width: ${cat.score * 10}%"></div>
                                         </div>
-                                        <span class="text-gray-700 font-medium">${cat.score.toFixed(1)}</span>
+                                        <span class="text-gray-700 font-medium">${cat.score.toFixed(1)}/10</span>
                                     </div>
                                 </div>
-                            `).join('')}
-                        </div>
+                                <p class="text-gray-600 text-xs leading-relaxed">${cat.explanation}</p>
+                            </div>
+                        `).join('')}
                     </div>
-                `;
-            }
+                </div>
+            `;
+        }
 
-            function updateStepProgress(activeStep) {
-                const steps = document.querySelectorAll('.step-indicator');
-                steps.forEach((step, index) => {
-                    const stepNumber = index + 1;
-                    const circle = step.querySelector('div');
-                    const text = step.querySelector('span');
-                    
-                    if (stepNumber <= activeStep) {
-                        circle.className = 'w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 shadow-lg';
-                        text.className = 'text-white font-medium';
-                        step.classList.add('active');
-                    } else {
-                        circle.className = 'w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 backdrop-blur-lg';
-                        text.className = 'text-white/60 font-medium';
-                        step.classList.remove('active');
-                    }
-                });
-            }
-
-            function showNotification(message, type) {
-                const notification = document.createElement('div');
-                const colors = {
-                    success: 'from-green-500 to-emerald-600',
-                    error: 'from-red-500 to-pink-600',
-                    warning: 'from-yellow-500 to-orange-600',
-                    info: 'from-blue-500 to-indigo-600'
-                };
-
-                notification.className = `fixed top-4 right-4 bg-gradient-to-r ${colors[type]} text-white px-6 py-4 rounded-xl shadow-2xl z-50 transform translate-x-full transition-transform duration-300 max-w-sm`;
-                notification.innerHTML = `
-                    <div class="flex items-center space-x-3">
-                        <div class="flex-shrink-0">
-                            ${type === 'success' ? 
-                                '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>' :
-                                '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>'
-                            }
-                        </div>
-                        <p class="font-medium">${message}</p>
-                    </div>
-                `;
-
-                document.body.appendChild(notification);
+        function updateStepProgress(activeStep) {
+            const steps = document.querySelectorAll('.step-indicator');
+            steps.forEach((step, index) => {
+                const stepNumber = index + 1;
+                const circle = step.querySelector('div');
+                const text = step.querySelector('span');
                 
-                setTimeout(() => {
-                    notification.classList.remove('translate-x-full');
-                }, 100);
+                if (stepNumber <= activeStep) {
+                    circle.className = 'w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 shadow-lg';
+                    text.className = 'text-white font-medium';
+                    step.classList.add('active');
+                } else {
+                    circle.className = 'w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 backdrop-blur-lg';
+                    text.className = 'text-white/60 font-medium';
+                    step.classList.remove('active');
+                }
+            });
+        }
 
-                setTimeout(() => {
-                    notification.classList.add('translate-x-full');
-                    setTimeout(() => {
-                        document.body.removeChild(notification);
-                    }, 300);
-                }, 4000);
-            }
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            const colors = {
+                success: 'from-green-500 to-emerald-600',
+                error: 'from-red-500 to-pink-600',
+                warning: 'from-yellow-500 to-orange-600',
+                info: 'from-blue-500 to-indigo-600'
+            };
 
-            // Smooth scrolling to sections
-            function scrollToSection(sectionId) {
-                document.getElementById(sectionId).scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-            }
+            notification.className = `fixed top-4 right-4 bg-gradient-to-r ${colors[type]} text-white px-6 py-4 rounded-xl shadow-2xl z-50 transform translate-x-full transition-transform duration-300 max-w-sm`;
+            notification.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <div class="flex-shrink-0">
+                        ${type === 'success' ? 
+                            '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>' :
+                            '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>'
+                        }
+                    </div>
+                    <p class="font-medium">${message}</p>
+                </div>
+            `;
 
-            // Initialize tooltips and animations
+            document.body.appendChild(notification);
+            
             setTimeout(() => {
-                document.querySelectorAll('.bounce-in').forEach((el, index) => {
-                    el.style.animationDelay = `${index * 0.1}s`;
-                });
+                notification.classList.remove('translate-x-full');
             }, 100);
-        });
-    </script>
+
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 4000);
+        }
+
+        function scrollToSection(sectionId) {
+            document.getElementById(sectionId).scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        }
+
+        // Initialize animations
+        setTimeout(() => {
+            document.querySelectorAll('.bounce-in').forEach((el, index) => {
+                el.style.animationDelay = `${index * 0.1}s`;
+            });
+        }, 100);
+    });
+</script>
 </body>
 </html>

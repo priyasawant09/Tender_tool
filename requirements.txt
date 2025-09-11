@@ -1,4 +1,5 @@
 Flask
+fitz
 Werkzeug
 SQLAlchemy
 PyPDF2
