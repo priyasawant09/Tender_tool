@@ -23,18 +23,20 @@ This project automates the process of matching CVs with job descriptions using A
 - Backend: Python, Flask
 
 - LLM: Gemini API
+- Frameworks: Langgraph
 
 - File Handling: PDF and DOCX parsing using fitz and docx
 
 ## System Workflow
 
+- Make a cvs_folder in the root directory.
 - Store the CVs which you want to analyze in the cvs_folder.
 
 - Enter job description in the UI.
 
 - parsing.py extracts relevant information from CVs.
 
-- ai_matching.py compares CVs with JD using Gemini LLM API.
+- ai_matching.py uses langgraph and compares CVs with JD using Gemini LLM API.
 
 - Flask backend (app.py) renders results on frontend (index.html).
 
@@ -68,7 +70,7 @@ Of course, here is the project structure formatted for a README file.
 AI-Based-CV-Matching-Tool/
 ├── backend/
 │   ├── __init__.py
-│   ├── ai_matching.py      # Gemini LLM matching logic
+│   ├── ai_matching.py      # Gemini LLM matching logic using Langgraph
 │   └── parsing.py          # CV parsing and extraction
 ├── cvs_folder/             # Folder to store all CVs
 ├── templates/
