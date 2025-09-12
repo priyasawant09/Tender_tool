@@ -1,8 +1,8 @@
-# AI-Based CV Matching using LLM
+# AI-Based CV Matching Tool using LLM
 
 ## Project Overview
 
-This project automates the process of matching CVs with job descriptions using AI. It parses CVs in PDF or DOCX formats, evaluates each CV against a job description using a Large Language Model (LLM), and generates a score out of 10 along with a brief explanation. This application is designed to help HR teams shortlist candidates efficiently and accurately.
+This project automates the process of matching CVs with job descriptions using AI. It parses CVs in PDF or DOCX formats, evaluates multiple CVs against a job description using a Large Language Model (LLM), and generates a score out of 10 along with a brief explanation. This application is designed to help HR teams shortlist candidates efficiently and accurately.
 
 ## Key Features
 
@@ -22,14 +22,14 @@ This project automates the process of matching CVs with job descriptions using A
 
 - Backend: Python, Flask
 
-- LLM: Gemini API
+- LLM: Google Gemini API
 - Frameworks: Langgraph
 
 - File Handling: PDF and DOCX parsing using fitz and docx
 
 ## System Workflow
 
-- Make a cvs_folder in the root directory.
+- Make a cvs_folder folder in the root directory.
 - Store the CVs which you want to analyze in the cvs_folder.
 
 - Enter job description in the UI.
