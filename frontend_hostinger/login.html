@@ -1,0 +1,28 @@
+<!-- templates/login.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sign in — AI CV Matcher</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body{font-family:Inter,system-ui,Arial,sans-serif;background:#0f172a;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .card{background:rgba(255,255,255,0.04);padding:28px;border-radius:12px;max-width:520px;width:100%;text-align:center}
+    .btn{background:linear-gradient(90deg,#3b82f6,#8b5cf6);padding:10px 16px;border-radius:8px;color:white;text-decoration:none;font-weight:600;display:inline-block}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 style="font-size:22px;margin-bottom:6px">AI CV Matcher</h1>
+    <p style="color:#cbd5e1;margin-bottom:18px">Sign in with Google to access the CV matching tool</p>
+
+    <!-- Sign-in button points at auth.login route in backend blueprint -->
+    <a href="{{ url_for('auth.login', next=url_for('index')) }}" class="btn">Sign in with Google</a>
+
+    <p style="margin-top:16px;color:#94a3b8;font-size:13px">
+      After signing in you'll be redirected back to the main app.
+    </p>
+  </div>
+</body>
+</html>

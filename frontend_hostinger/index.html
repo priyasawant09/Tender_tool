@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI CV Matcher Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            min-height: 100vh;
+        }
+        
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .result-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-origin: center;
+        }
+        
+        .result-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        
+        .upload-zone {
+            transition: all 0.3s ease;
+            background: linear-gradient(45deg, #f8fafc, #f1f5f9);
+        }
+        
+        .upload-zone:hover {
+            background: linear-gradient(45deg, #e2e8f0, #cbd5e1);
+            transform: translateY(-2px);
+        }
+        
+        .upload-zone.dragover {
+            background: linear-gradient(45deg, #dbeafe, #bfdbfe);
+            border-color: #3b82f6;
+            transform: scale(1.02);
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        
+        .floating-particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(180deg); }
+        }
+        
+        .step-indicator {
+            position: relative;
+        }
+        
+        .step-indicator::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            right: -50%;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, #e5e7eb, #d1d5db);
+            transform: translateY(-50%);
+        }
+        
+        .step-indicator:last-child::after {
+            display: none;
+        }
+        
+        .step-indicator.active::after {
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+        }
+        
+        .bounce-in {
+            animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+        
+        @keyframes bounceIn {
+            0% { transform: scale(0.3) rotate(-10deg); opacity: 0; }
+            50% { transform: scale(1.05) rotate(5deg); }
+            70% { transform: scale(0.9) rotate(-2deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        
+        .pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+        }
+    </style>
+</head>
+<body class="relative">
+    <!-- Floating Particles Background -->
+     
+    <div class="floating-particles">
+        <div class="particle" style="left: 10%; animation-delay: 0s; width: 10px; height: 10px;"></div>
+        <div class="particle" style="left: 20%; animation-delay: 2s; width: 6px; height: 6px;"></div>
+        <div class="particle" style="left: 30%; animation-delay: 4s; width: 8px; height: 8px;"></div>
+        <div class="particle" style="left: 60%; animation-delay: 1s; width: 12px; height: 12px;"></div>
+        <div class="particle" style="left: 80%; animation-delay: 3s; width: 7px; height: 7px;"></div>
+        <div class="particle" style="left: 90%; animation-delay: 5s; width: 9px; height: 9px;"></div>
+    </div>
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl relative z-10">
+        <!-- Header with enhanced design -->
+        <header class="mb-12">
+  <!-- Top bar: user/auth -->
+  <div class="flex items-center justify-between mb-8">
+    <div></div> <!-- keep left empty to avoid shifting layout -->
+
+    <div>
+      {% if session.user %}
+      <div class="flex items-center space-x-3 text-white">
+        <img src="{{ session.user.picture }}" alt="profile"
+             class="w-10 h-10 rounded-full border border-white/20 object-cover" />
+        <div class="text-right leading-tight">
+          <div class="font-semibold">{{ session.user.name }}</div>
+          <a href="{{ url_for('auth.logout') }}"
+             class="text-sm text-blue-300 hover:text-blue-400">Logout</a>
+        </div>
+      </div>
+      {% else %}
+      <a href="{{ url_for('auth.login') }}"
+         class="inline-flex items-center px-4 py-2 rounded-lg bg-white text-slate-900 font-medium hover:bg-white/90">
+        Sign in with Google
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Hero (unchanged) -->
+  <div class="text-center">
+    <div class="inline-block p-3 rounded-full bg-white/20 backdrop-blur-lg mb-6">
+      <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+      </div>
+    </div>
+
+    <h1 class="text-5xl md:text-7xl font-bold text-white mb-4 tracking-tight">
+      AI CV <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400">Matcher</span>
+    </h1>
+    <p class="text-xl text-white/80 max-w-2xl mx-auto leading-relaxed">
+      Leveraging artificial intelligence to find the perfect candidates for consulting roles
+    </p>
+
+    <div class="mt-8 flex justify-center space-x-6 text-white/60">
+      <!-- your three feature badges unchanged -->
+      <div class="flex items-center space-x-2">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd"
+                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                clip-rule="evenodd"></path>
+        </svg>
+        <span>AI-Powered</span>
+      </div>
+      <div class="flex items-center space-x-2">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd"
+                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                clip-rule="evenodd"></path>
+        </svg>
+        <span>Instant Results</span>
+      </div>
+      <div class="flex items-center space-x-2">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd"
+                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                clip-rule="evenodd"></path>
+        </svg>
+        <span>Secure & Private</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+        <!-- Progress Steps -->
+        <div class="flex justify-center mb-12">
+            <div class="flex items-center space-x-8">
+                <div class="step-indicator active flex flex-col items-center">
+                    <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 shadow-lg">
+                        1
+                    </div>
+                    <span class="text-white font-medium">Upload CVs</span>
+                </div>
+                <div class="step-indicator flex flex-col items-center" id="step-2">
+                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 backdrop-blur-lg">
+                        2
+                    </div>
+                    <span class="text-white/60 font-medium">Job Description</span>
+                </div>
+                <div class="step-indicator flex flex-col items-center" id="step-3">
+                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 backdrop-blur-lg">
+                        3
+                    </div>
+                    <span class="text-white/60 font-medium">Results</span>
+                </div>
+            </div>
+        </div>
+
+        <main class="space-y-8">
+            <!-- Step 1: Enhanced CV Upload -->
+            <section id="cv-upload-section" class="glass-effect p-8 rounded-2xl shadow-2xl">
+                <div class="flex items-center mb-6">
+                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-4">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">Upload CVs</h2>
+                        <p class="text-gray-600">Upload multiple CV files to analyze and match</p>
+                    </div>
+                </div>
+
+                <form id="cv-upload-form" enctype="multipart/form-data">
+                    <div class="upload-zone border-3 border-dashed border-gray-300 rounded-2xl p-12 text-center cursor-pointer" id="upload-zone">
+                        <input type="file" id="cv-files" name="files[]" multiple accept=".pdf,.docx" class="hidden">
+                        <label for="cv-files" class="cursor-pointer">
+                            <div class="mx-auto w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center mb-6">
+                                <svg class="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                            </div>
+                            <h3 class="text-2xl font-bold text-gray-700 mb-2">Drop your files here</h3>
+                            <p class="text-gray-500 mb-4">or <span class="text-blue-600 font-semibold hover:text-blue-700 transition">browse files</span></p>
+                            <div class="flex justify-center space-x-6 text-sm text-gray-400">
+                                <span class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    PDF, DOCX
+                                </span>
+                                <span class="flex items-center">
+                                    <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    Max 10MB each
+                                </span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div id="file-list" class="mt-6 space-y-3"></div>
+                    
+                    <div id="upload-progress" class="mt-4 hidden">
+                        <div class="bg-gray-200 rounded-full h-2">
+                            <div class="progress-bar h-2 rounded-full" style="width: 0%"></div>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-2 text-center">Processing files...</p>
+                    </div>
+
+                    <button type="submit" class="w-full mt-8 bg-gradient-to-r from-blue-600 to-purple-700 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-800 transition-all duration-300 transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:transform-none">
+                        <span class="flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                            Upload and Process CVs
+                        </span>
+                    </button>
+                </form>
+                
+                <div id="upload-status" class="mt-6 text-center"></div>
+            </section>
+
+            <!-- Step 2: Enhanced Job Description -->
+            <section id="jd-section" class="glass-effect p-8 rounded-2xl shadow-2xl">
+                <div class="flex items-center mb-6">
+                    <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-lg flex items-center justify-center mr-4">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">Job Description</h2>
+                        <p class="text-gray-600">Provide detailed job requirements for accurate matching</p>
+                    </div>
+                </div>
+
+                <form id="jd-form">
+                    <div class="relative">
+                        <textarea 
+                            id="job-description" 
+                            rows="12" 
+                            class="w-full p-6 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-300 custom-scrollbar resize-none" 
+                            placeholder="Paste your complete job description here...
+
+Include:
+• Job title and department
+• Required skills and experience
+• Educational requirements
+• Preferred qualifications
+• Job responsibilities
+• Company culture fit
+
+The more detailed the description, the better the AI matching accuracy."
+                        ></textarea>
+                        <div class="absolute bottom-4 right-4 text-sm text-gray-400" id="char-count">0 characters</div>
+                    </div>
+                    
+                    <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
+                            <div class="flex items-center mb-2">
+                                <svg class="w-5 h-5 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
+                                </svg>
+                                <h4 class="font-semibold text-blue-800">Skills Focus</h4>
+                            </div>
+                            <p class="text-sm text-blue-700">Technical and soft skills get higher weightage in matching</p>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
+                            <div class="flex items-center mb-2">
+                                <svg class="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                                <h4 class="font-semibold text-green-800">Experience</h4>
+                            </div>
+                            <p class="text-sm text-green-700">Years of experience and relevant work history matter</p>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-purple-50 to-violet-50 p-4 rounded-lg border border-purple-200">
+                            <div class="flex items-center mb-2">
+                                <svg class="w-5 h-5 text-purple-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z"></path>
+                                </svg>
+                                <h4 class="font-semibold text-purple-800">Education</h4>
+                            </div>
+                            <p class="text-sm text-purple-700">Educational background and certifications are considered</p>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="match-button" class="w-full mt-8 bg-gradient-to-r from-green-600 to-blue-700 text-white font-bold py-4 px-6 rounded-xl hover:from-green-700 hover:to-blue-800 transition-all duration-300 transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:transform-none">
+                        <span class="flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Find Perfect Matches
+                        </span>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Step 3: Enhanced Results Display -->
+            <section id="results-section" class="hidden">
+                <div class="text-center mb-8">
+                    <h2 class="text-4xl font-bold text-white mb-4">Matching Results</h2>
+                    <p class="text-white/80 text-lg">AI-powered analysis of candidate compatibility</p>
+                </div>
+                
+                <div id="loader" class="loader mx-auto mb-8 hidden"></div>
+                
+                <!-- Results Summary -->
+                <div id="results-summary" class="glass-effect p-6 rounded-2xl shadow-xl mb-8 hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 text-center">
+                        <div class="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
+                            <div class="text-3xl font-bold text-blue-600" id="total-cvs">0</div>
+                            <div class="text-sm text-blue-800 font-medium">Total CVs</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl">
+                            <div class="text-3xl font-bold text-green-600" id="excellent-matches">0</div>
+                            <div class="text-sm text-green-800 font-medium">Excellent (8-10)</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-yellow-50 to-orange-50 p-4 rounded-xl">
+                            <div class="text-3xl font-bold text-yellow-600" id="good-matches">0</div>
+                            <div class="text-sm text-yellow-800 font-medium">Good (5-7)</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-red-50 to-pink-50 p-4 rounded-xl">
+                            <div class="text-3xl font-bold text-red-600" id="poor-matches">0</div>
+                            <div class="text-sm text-red-800 font-medium">Poor (0-4)</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="results-output" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                    <!-- Results will be populated here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+  window.currentUser = JSON.parse('{{ session.user | tojson | default("null") | safe }}');
+</script>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const cvUploadForm = document.getElementById('cv-upload-form');
+        const cvFilesInput = document.getElementById('cv-files');
+        const fileList = document.getElementById('file-list');
+        const uploadStatus = document.getElementById('upload-status');
+        const uploadZone = document.getElementById('upload-zone');
+        const uploadProgress = document.getElementById('upload-progress');
+        
+        const jdForm = document.getElementById('jd-form');
+        const jdInput = document.getElementById('job-description');
+        const matchButton = document.getElementById('match-button');
+        const charCount = document.getElementById('char-count');
+        
+        const resultsSection = document.getElementById('results-section');
+        const loader = document.getElementById('loader');
+        const resultsOutput = document.getElementById('results-output');
+        const resultsSummary = document.getElementById('results-summary');
+
+        // Character counter for job description
+        jdInput.addEventListener('input', function() {
+            const length = this.value.length;
+            charCount.textContent = `${length.toLocaleString()} characters`;
+            
+            if (length > 500) {
+                charCount.classList.add('text-green-600');
+                charCount.classList.remove('text-gray-400');
+            } else {
+                charCount.classList.add('text-gray-400');
+                charCount.classList.remove('text-green-600');
+            }
+        });
+
+        // Disable CV upload since app.py uses cvs_folder
+        cvUploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            showNotification('CVs are processed from the server folder. Proceed to enter job description.', 'info');
+            updateStepProgress(2);
+            scrollToSection('jd-section');
+        });
+
+        // Enhanced Job Description Submission
+        jdForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const jobDescription = jdInput.value.trim();
+
+            if (!jobDescription) {
+                showNotification('Please enter a job description.', 'error');
+                return;
+            }
+
+            if (jobDescription.length < 100) {
+                showNotification('Please provide a more detailed job description (minimum 100 characters).', 'warning');
+                return;
+            }
+
+            resultsSection.classList.remove('hidden');
+            loader.classList.remove('hidden');
+            resultsOutput.innerHTML = '';
+            resultsSummary.classList.add('hidden');
+            matchButton.disabled = true;
+            matchButton.innerHTML = `
+                <span class="flex items-center justify-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Analyzing CVs...
+                </span>
+            `;
+
+            updateStepProgress(3);
+            scrollToSection('results-section');
+
+            try {
+                const response = await fetch('/match-cvs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ job_description: jobDescription })
+                });
+
+                const results = await response.json();
+
+                if (response.ok) {
+                    displayResults(results);
+                    showNotification('Analysis complete! Results are ready.', 'success');
+                } else {
+                    throw new Error(results.error || 'Failed to get matches.');
+                }
+
+            } catch (error) {
+                resultsOutput.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <div class="mx-auto w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                            <svg class="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-xl font-semibold text-red-600 mb-2">Analysis Failed</h3>
+                        <p class="text-red-500">${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                loader.classList.add('hidden');
+                matchButton.disabled = false;
+                matchButton.innerHTML = `
+                    <span class="flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        Find Perfect Matches
+                    </span>
+                `;
+            }
+        });
+
+        function displayResults(results) {
+            resultsOutput.innerHTML = '';
+            
+            if (results.length === 0) {
+                resultsOutput.innerHTML = `
+                    <div class="col-span-full text-center py-16">
+                        <div class="mx-auto w-32 h-32 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-6">
+                            <svg class="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold text-gray-700 mb-2">No Matching CVs Found</h3>
+                        <p class="text-gray-500 max-w-md mx-auto">Try adjusting your job description or ensure CVs are available in the server folder.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Sort results by overall_score (highest first)
+            results.sort((a, b) => b.overall_score - a.overall_score);
+            
+            // Calculate summary statistics
+            const totalCvs = results.length;
+            const excellentMatches = results.filter(r => r.overall_score >= 8).length;
+            const goodMatches = results.filter(r => r.overall_score >= 5 && r.overall_score < 8).length;
+            const poorMatches = results.filter(r => r.overall_score < 5).length;
+            
+            // Update summary
+            document.getElementById('total-cvs').textContent = totalCvs;
+            document.getElementById('excellent-matches').textContent = excellentMatches;
+            document.getElementById('good-matches').textContent = goodMatches;
+            document.getElementById('poor-matches').textContent = poorMatches;
+            resultsSummary.classList.remove('hidden');
+            
+            results.forEach((result, index) => {
+                const scoreColor = getScoreColor(result.overall_score);
+                const scoreGradient = getScoreGradient(result.overall_score);
+                const rankBadge = getRankBadge(index + 1);
+                
+                const card = document.createElement('div');
+                card.className = 'result-card glass-effect rounded-2xl shadow-xl overflow-hidden bounce-in';
+                card.style.animationDelay = `${index * 0.1}s`;
+                
+                card.innerHTML = `
+                    <div class="relative">
+                        ${rankBadge}
+                        <div class="p-6">
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="flex-1 min-w-0">
+                                    <h3 class="font-bold text-xl text-gray-900 truncate mb-1">${result.filename}</h3>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="px-3 py-1 rounded-full text-xs font-bold ${scoreColor.bg} ${scoreColor.text}">
+                                            ${result.overall_score.toFixed(1)}/10
+                                        </div>
+                                        <div class="text-sm text-gray-500">${getScoreLabel(result.overall_score)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Score visualization -->
+                            <div class="mb-4">
+                                <div class="flex justify-between text-sm text-gray-600 mb-1">
+                                    <span>Overall Match Score</span>
+                                    <span>${result.overall_score.toFixed(1)}/10</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div class="h-full ${scoreGradient} rounded-full transition-all duration-1000 ease-out" style="width: ${result.overall_score * 10}%"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-3">
+                                ${getScoreBreakdown(result.details)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                resultsOutput.appendChild(card);
+            });
+        }
+
+        function getScoreColor(score) {
+            if (score >= 8) return { bg: 'bg-green-100', text: 'text-green-800' };
+            if (score >= 6) return { bg: 'bg-blue-100', text: 'text-blue-800' };
+            if (score >= 4) return { bg: 'bg-yellow-100', text: 'text-yellow-800' };
+            return { bg: 'bg-red-100', text: 'text-red-800' };
+        }
+
+        function getScoreGradient(score) {
+            if (score >= 8) return 'bg-gradient-to-r from-green-500 to-emerald-600';
+            if (score >= 6) return 'bg-gradient-to-r from-blue-500 to-indigo-600';
+            if (score >= 4) return 'bg-gradient-to-r from-yellow-500 to-orange-600';
+            return 'bg-gradient-to-r from-red-500 to-pink-600';
+        }
+
+        function getScoreLabel(score) {
+            if (score >= 8) return 'Excellent Match';
+            if (score >= 6) return 'Good Match';
+            if (score >= 4) return 'Fair Match';
+            return 'Poor Match';
+        }
+
+        function getRankBadge(rank) {
+            if (rank <= 3) {
+                const colors = ['from-yellow-400 to-yellow-600', 'from-gray-300 to-gray-500', 'from-orange-400 to-orange-600'];
+                const icons = ['👑', '🥈', '🥉'];
+                return `
+                    <div class="absolute top-4 right-4 bg-gradient-to-r ${colors[rank-1]} text-white px-3 py-1 rounded-full text-sm font-bold flex items-center space-x-1 shadow-lg">
+                        <span>${icons[rank-1]}</span>
+                        <span>#${rank}</span>
+                    </div>
+                `;
+            }
+            return `
+                <div class="absolute top-4 right-4 bg-gradient-to-r from-gray-400 to-gray-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg">
+                    #${rank}
+                </div>
+            `;
+        }
+
+        function getScoreBreakdown(details) {
+            const categories = [
+                { name: 'Skills Match', score: details.skills.score, explanation: details.skills.explanation },
+                { name: 'Experience', score: details.experience.score, explanation: details.experience.explanation },
+                { name: 'Education', score: details.education.score, explanation: details.education.explanation },
+                { name: 'Projects', score: details.projects.score, explanation: details.projects.explanation }
+            ];
+
+            return `
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <h5 class="font-medium text-gray-700 mb-2 text-sm">Score Breakdown</h5>
+                    <div class="space-y-2">
+                        ${categories.map(cat => `
+                            <div>
+                                <div class="flex justify-between items-center text-xs mb-1">
+                                    <span class="text-gray-600">${cat.name}</span>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-16 bg-gray-200 rounded-full h-1.5">
+                                            <div class="h-1.5 ${getScoreGradient(cat.score)} rounded-full" style="width: ${cat.score * 10}%"></div>
+                                        </div>
+                                        <span class="text-gray-700 font-medium">${cat.score.toFixed(1)}/10</span>
+                                    </div>
+                                </div>
+                                <p class="text-gray-600 text-xs leading-relaxed">${cat.explanation}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateStepProgress(activeStep) {
+            const steps = document.querySelectorAll('.step-indicator');
+            steps.forEach((step, index) => {
+                const stepNumber = index + 1;
+                const circle = step.querySelector('div');
+                const text = step.querySelector('span');
+                
+                if (stepNumber <= activeStep) {
+                    circle.className = 'w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 shadow-lg';
+                    text.className = 'text-white font-medium';
+                    step.classList.add('active');
+                } else {
+                    circle.className = 'w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-lg mb-2 backdrop-blur-lg';
+                    text.className = 'text-white/60 font-medium';
+                    step.classList.remove('active');
+                }
+            });
+        }
+
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            const colors = {
+                success: 'from-green-500 to-emerald-600',
+                error: 'from-red-500 to-pink-600',
+                warning: 'from-yellow-500 to-orange-600',
+                info: 'from-blue-500 to-indigo-600'
+            };
+
+            notification.className = `fixed top-4 right-4 bg-gradient-to-r ${colors[type]} text-white px-6 py-4 rounded-xl shadow-2xl z-50 transform translate-x-full transition-transform duration-300 max-w-sm`;
+            notification.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <div class="flex-shrink-0">
+                        ${type === 'success' ? 
+                            '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>' :
+                            '<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>'
+                        }
+                    </div>
+                    <p class="font-medium">${message}</p>
+                </div>
+            `;
+
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 4000);
+        }
+
+        function scrollToSection(sectionId) {
+            document.getElementById(sectionId).scrollIntoView({
+                behavior: 'smooth',
+                block: 'start'
+            });
+        }
+
+        // Initialize animations
+        setTimeout(() => {
+            document.querySelectorAll('.bounce-in').forEach((el, index) => {
+                el.style.animationDelay = `${index * 0.1}s`;
+            });
+        }, 100);
+    });
+</script>
+</body>
+</html>

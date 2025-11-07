@@ -26,6 +26,11 @@ app = Flask(__name__)
 
 CORS(app, origins=["https://ghostwhite-fox-926923.hostingersite.com","http://localhost:5000"],supports_credentials=True)
 
+app.config['SESSION_COOKIE_SAMESITE'] = "None"
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+
+
 # Ensure the folder for CVs exists
 os.makedirs(CVS_FOLDER, exist_ok=True)
 
@@ -66,9 +71,14 @@ def login_page_view():
 def index():
     if 'user' not in session:
         return redirect(url_for('login_page_view'))
-    # else render your existing index.html (the CV tool)
     return render_template('index.html')
 
+@app.route('/current_user')
+def current_user():
+    user = session.get('user')  
+    if user:
+        return jsonify({'user': user})
+    return jsonify({'user': None}), 204
 
 # --- CV Upload Route ---
 @app.route('/upload-cvs', methods=['POST'])

@@ -1,11 +1,7 @@
 // static/style/main.js
 (() => {
-  // read the backend + frontend base from config.js
-  const API_BASE = (window.APP_CONFIG && window.APP_CONFIG.API_BASE) || '';
-  const FRONTEND_BASE = (window.APP_CONFIG && window.APP_CONFIG.FRONTEND_BASE) || '';
-
-  // currentUser will be loaded from backend on page load (so static pages work)
-  let currentUser = null;
+  // read the current user set by template
+  const currentUser = window.currentUser || null;
 
   // small helper: toast notifications
   function showNotification(message, type='info', timeout=3500) {
@@ -27,58 +23,12 @@
     setTimeout(() => { n.style.transform = 'translateX(120%)'; setTimeout(()=> n.remove(), 300); }, timeout);
   }
 
-  // --- Auth helpers -----------------------------------------------------
-  async function fetchCurrentUser() {
-    try {
-      if (!API_BASE) return null;
-      const res = await fetch(`${API_BASE}/current_user`, {
-        method: 'GET',
-        credentials: 'include' // important for cookie-based session
-      });
-      if (!res.ok) return null;
-      const j = await res.json();
-      return j.user || null;
-    } catch (err) {
-      console.warn('Failed to fetch current user', err);
-      return null;
-    }
-  }
-
   // wire login button(s) if any non-Jinja link exists
   document.querySelectorAll('[data-auth-login]').forEach(el => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      // redirect to backend auth route (absolute)
-      if (!API_BASE) {
-        showNotification('Backend URL not configured', 'error');
-        return;
-      }
-      // use backend auth URL — backend will redirect to Google and back
-      window.location.href = `${API_BASE}/auth/login`;
-    });
-  });
-
-  // wire logout (if any)
-  document.querySelectorAll('[data-auth-logout]').forEach(el => {
-    el.addEventListener('click', async (e) => {
-      e.preventDefault();
-      if (!API_BASE) { showNotification('Backend URL not configured', 'error'); return; }
-      try {
-        const res = await fetch(`${API_BASE}/auth/logout`, {
-          method: 'POST',
-          credentials: 'include'
-        });
-        if (res.ok) {
-          currentUser = null;
-          showNotification('Logged out', 'success');
-          // optionally refresh page / redirect to login
-          window.location.href = FRONTEND_BASE || '/';
-        } else {
-          showNotification('Logout failed', 'error');
-        }
-      } catch (err) {
-        showNotification('Logout error', 'error');
-      }
+      // redirect to Flask auth
+      window.location.href = '/auth/login';
     });
   });
 
@@ -91,7 +41,7 @@
     return true;
   }
 
-  // --- Upload form handling ---------------------------------------------
+  // Upload form handling
   const cvUploadForm = document.getElementById('cv-upload-form');
   if (cvUploadForm) {
     cvUploadForm.addEventListener('submit', async function (e) {
@@ -105,13 +55,9 @@
       const formData = new FormData();
       Array.from(filesInput.files).forEach(f => formData.append('files[]', f));
       const uploadButton = document.getElementById('upload-button');
-      if (uploadButton) uploadButton.disabled = true;
+      uploadButton.disabled = true;
       try {
-        const resp = await fetch(`${API_BASE}/upload-cvs`, {
-          method: 'POST',
-          body: formData,
-          credentials: 'include' // include cookies for session auth
-        });
+        const resp = await fetch('/upload-cvs', { method: 'POST', body: formData, credentials: 'same-origin' });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Upload failed');
         showNotification(data.message || 'Uploaded', 'success');
@@ -123,7 +69,7 @@
     });
   }
 
-  // --- Job description match handling ----------------------------------
+  // Job description match handling
   const jdForm = document.getElementById('jd-form');
   if (jdForm) {
     jdForm.addEventListener('submit', async function (e) {
@@ -134,12 +80,12 @@
       if (!jd) { showNotification('Please enter job description', 'error'); return; }
 
       const matchButton = document.getElementById('match-button');
-      if (matchButton) matchButton.disabled = true;
+      matchButton.disabled = true;
       try {
-        const resp = await fetch(`${API_BASE}/match-cvs`, {
+        const resp = await fetch('/match-cvs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include', // include cookies
+          credentials: 'same-origin',
           body: JSON.stringify({ job_description: jd })
         });
         const results = await resp.json();
@@ -150,17 +96,19 @@
       } catch (err) {
         showNotification(err.message || 'Matching error', 'error');
       } finally {
-        if (matchButton) matchButton.disabled = false;
+        matchButton.disabled = false;
       }
     });
   }
 
   // Example: when results are ready, inline template code can listen and render
+  // (Your current index.html already does rendering; this is optional)
   document.addEventListener('matches-ready', (e) => {
+    // if you want to do something from external JS when results are ready
     console.log('Matches ready: ', e.detail);
   });
 
-  // small UX: highlight upload zone on drag (unchanged)
+  // small UX: highlight upload zone on drag
   const uploadZone = document.getElementById('upload-zone');
   if (uploadZone) {
     ['dragenter','dragover'].forEach(ev => uploadZone.addEventListener(ev, ev2 => { ev2.preventDefault(); uploadZone.classList.add('dragover'); }));
@@ -175,13 +123,5 @@
   }
 
   // expose helpers for console if needed
-  window._cvMatcher = { showNotification, requireLogin, getCurrentUser: () => currentUser };
-
-  // --- On load: try to fetch current user from backend -------------------
-  (async function init() {
-    currentUser = await fetchCurrentUser();
-    // dispatch an event so any inline template using currentUser can update
-    document.dispatchEvent(new CustomEvent('user-loaded', { detail: currentUser }));
-  })();
-
+  window._cvMatcher = { showNotification, requireLogin, currentUser };
 })();
