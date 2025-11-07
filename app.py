@@ -5,12 +5,18 @@ from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from backend.parsing import parse_cv
 from backend.ai_matching import setup_graph
-import config
 from backend.auth import auth_bp, init_oauth, login_required
 from flask import session
 from flask import redirect, url_for
 from flask_cors import CORS
 
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+OAUTH_REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI")
 
 
 CVS_FOLDER = 'cvs_folder'
@@ -18,19 +24,19 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 
 app = Flask(__name__)
 
-CORS(app, origins=["https://ghostwhite-fox-926923.hostingersite.com"],supports_credentials=True)
+CORS(app, origins=["https://ghostwhite-fox-926923.hostingersite.com","http://localhost:5000"],supports_credentials=True)
 
 # Ensure the folder for CVs exists
 os.makedirs(CVS_FOLDER, exist_ok=True)
 
-# Load secret key and OAuth config from your config.py (which uses load_dotenv)
-app.config['SECRET_KEY'] = config.FLASK_SECRET_KEY
-app.config['GOOGLE_CLIENT_ID'] = config.GOOGLE_CLIENT_ID
-app.config['GOOGLE_CLIENT_SECRET'] = config.GOOGLE_CLIENT_SECRET
+# Configure app from environment variables (no dependency on config module)
+app.config['SECRET_KEY'] = FLASK_SECRET_KEY or os.getenv("FLASK_SECRET_KEY", "dev-secret")
+app.config['GOOGLE_CLIENT_ID'] = GOOGLE_CLIENT_ID
+app.config['GOOGLE_CLIENT_SECRET'] = GOOGLE_CLIENT_SECRET
 
-# If you put OAUTH_REDIRECT_URI in .env, it's optional to set here; Authlib will use discovery + url_for
-if hasattr(config, 'OAUTH_REDIRECT_URI') and config.OAUTH_REDIRECT_URI:
-    app.config['OAUTH_REDIRECT_URI'] = config.OAUTH_REDIRECT_URI
+# Optional OAuth redirect (only set if provided)
+if OAUTH_REDIRECT_URI:
+    app.config['OAUTH_REDIRECT_URI'] = OAUTH_REDIRECT_URI
 
 
 init_oauth(app)
