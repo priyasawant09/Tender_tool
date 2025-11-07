@@ -3,7 +3,7 @@ import os
 from flask import Blueprint, session, redirect, url_for, request, jsonify, current_app
 from authlib.integrations.flask_client import OAuth
 from urllib.parse import urljoin
-
+from functools import wraps
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 oauth = OAuth()
 
