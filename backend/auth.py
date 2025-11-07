@@ -19,6 +19,38 @@ def init_oauth(app):
         client_kwargs={"scope": "openid email profile"}
     )
 
+def login_required(f):
+    """
+    Decorator to protect routes. Works for both browser and AJAX/fetch clients.
+    - For browser: redirects to /auth/login
+    - For AJAX/fetch: returns JSON 401 with message
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user = session.get("user")
+        if user:
+            return f(*args, **kwargs)
+
+        # Decide if request expects JSON (AJAX/fetch) or HTML (browser)
+        wants_json = False
+        # check common X-Requested-With header or Accept header
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            wants_json = True
+        elif request.accept_mimetypes:
+            # if client prefers JSON over HTML, treat as API call
+            wants_json = request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
+
+        if wants_json:
+            return jsonify({"error": "login_required", "message": "Please sign in"}), 401
+
+        # Otherwise redirect the browser to login route (backend handles google redirect)
+        # Preserve optional next param so user returns to where they were
+        login_url = url_for("auth.login", _external=True)
+        # If frontend URL known, you can pass next param (optional)
+        return redirect(login_url)
+
+    return decorated
+
 # Helper: safe redirect back to frontend (configurable)
 def frontend_url(path="/"):
     frontend = os.getenv("FRONTEND_URL") or current_app.config.get("FRONTEND_URL") or ""
