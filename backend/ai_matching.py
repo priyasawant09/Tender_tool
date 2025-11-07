@@ -1,12 +1,13 @@
 import os
 import json
 import requests
-from config import GEMINI_API_KEY
+import os
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
 from typing import TypedDict, Dict
 
 # API URL for the Gemini model
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
 
