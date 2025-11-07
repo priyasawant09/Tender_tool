@@ -5,6 +5,11 @@ from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from backend.parsing import parse_cv
 from backend.ai_matching import setup_graph
+import config
+from backend.auth import auth_bp, init_oauth, login_required
+from flask import session
+from flask import redirect, url_for
+
 
 CVS_FOLDER = 'cvs_folder'
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
@@ -13,6 +18,21 @@ app = Flask(__name__)
 
 # Ensure the folder for CVs exists
 os.makedirs(CVS_FOLDER, exist_ok=True)
+
+# Load secret key and OAuth config from your config.py (which uses load_dotenv)
+app.config['SECRET_KEY'] = config.FLASK_SECRET_KEY
+app.config['GOOGLE_CLIENT_ID'] = config.GOOGLE_CLIENT_ID
+app.config['GOOGLE_CLIENT_SECRET'] = config.GOOGLE_CLIENT_SECRET
+
+# If you put OAUTH_REDIRECT_URI in .env, it's optional to set here; Authlib will use discovery + url_for
+if hasattr(config, 'OAUTH_REDIRECT_URI') and config.OAUTH_REDIRECT_URI:
+    app.config['OAUTH_REDIRECT_URI'] = config.OAUTH_REDIRECT_URI
+
+
+init_oauth(app)
+app.register_blueprint(auth_bp, url_prefix='/auth')
+
+
 
 # One-Time Graph Compilation
 print("🚀 Compiling the AI workflow graph... This happens only once!")
@@ -24,13 +44,25 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+
 # Frontend Render Route
+
+@app.route('/login')
+def login_page_view():
+    
+    return render_template('login.html')
+
 @app.route('/')
 def index():
+    if 'user' not in session:
+        return redirect(url_for('login_page_view'))
+    # else render your existing index.html (the CV tool)
     return render_template('index.html')
+
 
 # --- CV Upload Route ---
 @app.route('/upload-cvs', methods=['POST'])
+@login_required
 def upload_cvs():
 
     # Clear the CVs folder for a fresh session
@@ -116,4 +148,6 @@ def match_cvs():
 
 # Run the Flask app
 if __name__ == '__main__':
-    app.run(debug=True)
+    from os import environ
+    app.run(host="0.0.0.0", port=int(environ.get("PORT", 8000)))
+   # app.run(debug=True)
