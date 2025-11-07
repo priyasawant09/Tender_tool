@@ -9,12 +9,16 @@ import config
 from backend.auth import auth_bp, init_oauth, login_required
 from flask import session
 from flask import redirect, url_for
+from flask_cors import CORS
+
 
 
 CVS_FOLDER = 'cvs_folder'
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 
 app = Flask(__name__)
+
+CORS(app, origins=["https://ghostwhite-fox-926923.hostingersite.com"],supports_credentials=True)
 
 # Ensure the folder for CVs exists
 os.makedirs(CVS_FOLDER, exist_ok=True)

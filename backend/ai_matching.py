@@ -7,7 +7,7 @@ from langchain_core.prompts import PromptTemplate
 from typing import TypedDict, Dict
 
 # API URL for the Gemini model
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+API_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
 
 skills_prompt = PromptTemplate.from_template("""
