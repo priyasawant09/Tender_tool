@@ -29,35 +29,68 @@
   }
 
   
-  async function fetchCurrentUser() {
-    if (!API_BASE) return null;
+    async function fetchCurrentUser() {
     try {
-      const res = await fetch(`${API_BASE}/current_user`, { credentials: 'include' });
-  
-      if (res.status === 204) return null;
-    
-      const ct = res.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) return null;
-      const j = await res.json();
-      return j.user || null;
-    } catch (e) {
-      console.warn('fetchCurrentUser failed', e);
+      const resp = await fetch(`${API_BASE || "https://ai-cv-backend-gojz.onrender.com"}/current_user`, {
+        credentials: 'include',
+        headers: { "Accept": "application/json" },
+      });
+
+      // If backend returns 204 or no body, treat as no user
+      if (resp.status === 204) return null;
+
+      if (!resp.ok) {
+        console.error("current_user failed", resp.status);
+        return null;
+      }
+
+      const json = await resp.json();
+      // backend returns { user: ... } — normalize to user object or null
+      return (json && json.user) ? json.user : null;
+
+    } catch (err) {
+      console.error("fetchCurrentUser error", err);
       return null;
     }
   }
 
 
-  document.querySelectorAll('[data-auth-login]').forEach(el => {
-    el.addEventListener('click', (e) => {
+  document.querySelectorAll('[data-auth-logout]').forEach(el => {
+    el.addEventListener('click', async (e) => {
       e.preventDefault();
-      if (!API_BASE) {
-        showNotification('Backend not configured (API_BASE missing).', 'error');
-        return;
+      if (!API_BASE) { showNotification('Backend not configured', 'error'); return; }
+      try {
+        // If your backend expects GET for logout, change 'POST' to 'GET' here.
+        await fetch(`${API_BASE}/auth/logout`, { method: 'GET', credentials: 'include' });
+      } catch (err) {
+        console.warn('logout error', err);
+      } finally {
+        currentUser = null;
+        window.location.href = FRONTEND_BASE || "/";
       }
-      // redirect to absolute backend login URL
-      window.location.href = `${API_BASE}/auth/login`;
     });
   });
+
+  (async function init() {
+    currentUser = await fetchCurrentUser();
+
+    const userBlock = document.getElementById('user-block');
+    const loginBlock = document.getElementById('login-block');
+
+    if (currentUser) {
+      if (userBlock) {
+        userBlock.style.display = 'flex';
+        const pic = document.getElementById('user-pic');
+        const name = document.getElementById('user-name');
+        if (pic && currentUser.picture) pic.src = currentUser.picture;
+        if (name && currentUser.name) name.textContent = currentUser.name;
+      }
+      if (loginBlock) loginBlock.style.display = 'none';
+    } else {
+      if (userBlock) userBlock.style.display = 'none';
+      if (loginBlock) loginBlock.style.display = 'block';
+    }
+  })();  
 
   // wire logout buttons
   document.querySelectorAll('[data-auth-logout]').forEach(el => {

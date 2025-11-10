@@ -4,6 +4,9 @@ from flask import Blueprint, session, redirect, url_for, request, jsonify, curre
 from authlib.integrations.flask_client import OAuth
 from urllib.parse import urljoin
 from functools import wraps
+import logging
+
+
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 oauth = OAuth()
 
@@ -88,6 +91,7 @@ def callback():
     }
 
     session["user"] = user
+    current_app.logger.info("Logged in user stored in session: %s", user.get("email"))
 
     # Optional: redirect to saved next URL or to frontend profile
     next_url = session.pop("next_url", None)
@@ -114,9 +118,8 @@ def logout():
 @auth_bp.route("/current_user", methods=["GET"])
 def current_user():
     user = session.get("user")
-    if not user:
-        return jsonify({"user": None}), 204
-    return jsonify({"user": user})
+    
+    return jsonify({"user": user}), 200 
 
 # If you prefer /current_user at root (not under /auth), export a function to register that route on app
 def register_current_user_route(app):
