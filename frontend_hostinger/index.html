@@ -170,24 +170,26 @@
     <div></div> <!-- keep left empty to avoid shifting layout -->
 
     <div>
-      {% if session.user %}
-      <div class="flex items-center space-x-3 text-white">
-        <img src="{{ session.user.picture }}" alt="profile"
-             class="w-10 h-10 rounded-full border border-white/20 object-cover" />
-        <div class="text-right leading-tight">
-          <div class="font-semibold">{{ session.user.name }}</div>
-          <a href="{{ url_for('auth.logout') }}"
-             class="text-sm text-blue-300 hover:text-blue-400">Logout</a>
-        </div>
-      </div>
-      {% else %}
-      <a href="{{ url_for('auth.login') }}"
-         class="inline-flex items-center px-4 py-2 rounded-lg bg-white text-slate-900 font-medium hover:bg-white/90">
-        Sign in with Google
-      </a>
-      {% endif %}
+  <!-- Logged-in user block (hidden when not logged in) -->
+  <div id="user-block" class="flex items-center space-x-3 text-white" style="display:none;">
+    <img id="user-pic" src="" alt="profile"
+         class="w-10 h-10 rounded-full border border-white/20 object-cover" />
+    <div class="text-right leading-tight">
+      <div id="user-name" class="font-semibold"></div>
+      <a id="logout-link" href="#" data-auth-logout
+         class="text-sm text-blue-300 hover:text-blue-400">Logout</a>
     </div>
   </div>
+
+  <!-- Not-logged-in block -->
+  <div id="login-block">
+    <button data-auth-login
+       class="inline-flex items-center px-4 py-2 rounded-lg bg-white text-slate-900 font-medium hover:bg-white/90">
+      Sign in with Google
+    </button>
+  </div>
+</div>
+
 
   <!-- Hero (unchanged) -->
   <div class="text-center">
@@ -441,10 +443,9 @@ The more detailed the description, the better the AI matching accuracy."
             </section>
         </main>
     </div>
+<script src="config.js"></script>
+<script src="Static/main.js"></script>
 
-    <script>
-  window.currentUser = JSON.parse('{{ session.user | tojson | default("null") | safe }}');
-</script>
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {

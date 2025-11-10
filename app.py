@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 from backend.parsing import parse_cv
 from backend.ai_matching import setup_graph
-from backend.auth import auth_bp, init_oauth, login_required
+from backend.auth import auth_bp, init_oauth,login_required,register_current_user_route
 from flask import session
 from flask import redirect, url_for
 from flask_cors import CORS
@@ -29,6 +29,7 @@ CORS(app, origins=["https://ghostwhite-fox-926923.hostingersite.com","http://loc
 app.config['SESSION_COOKIE_SAMESITE'] = "None"
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['PREFERRED_URL_SCHEME'] = 'https'
 
 
 # Ensure the folder for CVs exists
@@ -44,10 +45,10 @@ if OAUTH_REDIRECT_URI:
     app.config['OAUTH_REDIRECT_URI'] = OAUTH_REDIRECT_URI
 
 
+
+app.register_blueprint(auth_bp, url_prefix="/auth")
+register_current_user_route(app)
 init_oauth(app)
-app.register_blueprint(auth_bp, url_prefix='/auth')
-
-
 
 # One-Time Graph Compilation
 print("🚀 Compiling the AI workflow graph... This happens only once!")

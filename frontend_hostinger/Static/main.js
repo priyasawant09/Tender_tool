@@ -1,7 +1,12 @@
-// static/style/main.js
+// Static/main.js
 (() => {
-  // read the current user set by template
-  const currentUser = window.currentUser || null;
+  // Read runtime config set by config.js
+  const APP_CONFIG = window.APP_CONFIG || {};
+  const API_BASE = APP_CONFIG.API_BASE || "";
+  const FRONTEND_BASE = APP_CONFIG.FRONTEND_BASE || "";
+
+  // currentUser will be loaded from backend on page load
+  let currentUser = null;
 
   // small helper: toast notifications
   function showNotification(message, type='info', timeout=3500) {
@@ -23,12 +28,52 @@
     setTimeout(() => { n.style.transform = 'translateX(120%)'; setTimeout(()=> n.remove(), 300); }, timeout);
   }
 
-  // wire login button(s) if any non-Jinja link exists
+  
+  async function fetchCurrentUser() {
+    if (!API_BASE) return null;
+    try {
+      const res = await fetch(`${API_BASE}/current_user`, { credentials: 'include' });
+  
+      if (res.status === 204) return null;
+    
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) return null;
+      const j = await res.json();
+      return j.user || null;
+    } catch (e) {
+      console.warn('fetchCurrentUser failed', e);
+      return null;
+    }
+  }
+
+
   document.querySelectorAll('[data-auth-login]').forEach(el => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      // redirect to Flask auth
-      window.location.href = '/auth/login';
+      if (!API_BASE) {
+        showNotification('Backend not configured (API_BASE missing).', 'error');
+        return;
+      }
+      // redirect to absolute backend login URL
+      window.location.href = `${API_BASE}/auth/login`;
+    });
+  });
+
+  // wire logout buttons
+  document.querySelectorAll('[data-auth-logout]').forEach(el => {
+    el.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!API_BASE) { showNotification('Backend not configured', 'error'); return; }
+      try {
+        // call logout endpoint; backend should clear session cookie and redirect or return success
+        await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+      } catch (err) {
+        console.warn('logout error', err);
+      } finally {
+        // refresh UI: clear user and reload page
+        currentUser = null;
+        window.location.href = FRONTEND_BASE || "/";
+      }
     });
   });
 
@@ -55,9 +100,9 @@
       const formData = new FormData();
       Array.from(filesInput.files).forEach(f => formData.append('files[]', f));
       const uploadButton = document.getElementById('upload-button');
-      uploadButton.disabled = true;
+      if (uploadButton) uploadButton.disabled = true;
       try {
-        const resp = await fetch('/upload-cvs', { method: 'POST', body: formData, credentials: 'same-origin' });
+        const resp = await fetch(`${API_BASE}/upload-cvs`, { method: 'POST', body: formData, credentials: 'include' });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Upload failed');
         showNotification(data.message || 'Uploaded', 'success');
@@ -80,35 +125,32 @@
       if (!jd) { showNotification('Please enter job description', 'error'); return; }
 
       const matchButton = document.getElementById('match-button');
-      matchButton.disabled = true;
+      if (matchButton) matchButton.disabled = true;
       try {
-        const resp = await fetch('/match-cvs', {
+        const resp = await fetch(`${API_BASE}/match-cvs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
+          credentials: 'include',
           body: JSON.stringify({ job_description: jd })
         });
         const results = await resp.json();
         if (!resp.ok) throw new Error(results.error || 'Matching failed');
-        // simple event dispatch so template's inline JS can handle rendering if still present
         document.dispatchEvent(new CustomEvent('matches-ready', { detail: results }));
         showNotification('Matching done', 'success');
       } catch (err) {
         showNotification(err.message || 'Matching error', 'error');
       } finally {
-        matchButton.disabled = false;
+        if (matchButton) matchButton.disabled = false;
       }
     });
   }
 
-  // Example: when results are ready, inline template code can listen and render
-  // (Your current index.html already does rendering; this is optional)
+  // handle matches-ready (optional)
   document.addEventListener('matches-ready', (e) => {
-    // if you want to do something from external JS when results are ready
     console.log('Matches ready: ', e.detail);
   });
 
-  // small UX: highlight upload zone on drag
+  // Drag & drop for upload zone (unchanged)
   const uploadZone = document.getElementById('upload-zone');
   if (uploadZone) {
     ['dragenter','dragover'].forEach(ev => uploadZone.addEventListener(ev, ev2 => { ev2.preventDefault(); uploadZone.classList.add('dragover'); }));
@@ -122,6 +164,30 @@
     });
   }
 
-  // expose helpers for console if needed
-  window._cvMatcher = { showNotification, requireLogin, currentUser };
+  // expose helpers and attempt to load current user on init
+  window._cvMatcher = { showNotification, requireLogin, getCurrentUser: () => currentUser };
+
+  (async function init() {
+    currentUser = await fetchCurrentUser();
+    // update UI if you have placeholders
+    if (currentUser) {
+      // show/hide blocks if present
+      const userBlock = document.getElementById('user-block');
+      const loginBlock = document.getElementById('login-block');
+      if (userBlock) {
+        userBlock.style.display = 'flex';
+        const pic = document.getElementById('user-pic');
+        const name = document.getElementById('user-name');
+        if (pic && currentUser.picture) pic.src = currentUser.picture;
+        if (name && currentUser.name) name.textContent = currentUser.name;
+      }
+      if (loginBlock) loginBlock.style.display = 'none';
+    } else {
+      const userBlock = document.getElementById('user-block');
+      const loginBlock = document.getElementById('login-block');
+      if (userBlock) userBlock.style.display = 'none';
+      if (loginBlock) loginBlock.style.display = 'block';
+    }
+  })();
+
 })();
