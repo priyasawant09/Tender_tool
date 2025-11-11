@@ -44,7 +44,8 @@ allowed_origins = [
     "https://ghostwhite-fox-926923.hostingersite.com",
     "http://localhost:5000"
 ]
-CORS(app, origins=allowed_origins, supports_credentials=True)
+CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type','Authorization'])
+
 
 # OAuth Setup
 app.config['GOOGLE_CLIENT_ID'] = GOOGLE_CLIENT_ID

@@ -522,13 +522,11 @@ The more detailed the description, the better the AI matching accuracy."
             scrollToSection('results-section');
 
             try {
-                const response = await fetch('/match-cvs', {
+                    const response = await window._cvMatcher.fetchWithAuth(`${API_BASE}/match-cvs`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ job_description: jobDescription })
-                });
+                    });
 
                 const results = await response.json();
 

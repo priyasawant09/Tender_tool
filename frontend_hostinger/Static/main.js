@@ -1,11 +1,11 @@
 // Static/main.js
 (() => {
-  // Read runtime config set by config.js
+  // Runtime config (ensure config.js loads before this)
   const APP_CONFIG = window.APP_CONFIG || {};
-  const API_BASE = APP_CONFIG.API_BASE || "";
-  const FRONTEND_BASE = APP_CONFIG.FRONTEND_BASE || "";
+  const API_BASE = APP_CONFIG.API_BASE || "https://ai-cv-backend-gojz.onrender.com";
+  const FRONTEND_BASE = APP_CONFIG.FRONTEND_BASE || "https://ghostwhite-fox-926923.hostingersite.com";
 
-  // currentUser will be loaded from backend on page load
+  // currentUser will be loaded from backend on page load (via JWT or session)
   let currentUser = null;
 
   // small helper: toast notifications
@@ -28,18 +28,72 @@
     setTimeout(() => { n.style.transform = 'translateX(120%)'; setTimeout(()=> n.remove(), 300); }, timeout);
   }
 
-  
-    async function fetchCurrentUser() {
+  // -------------------------
+  // JWT handling helpers
+  // -------------------------
+  function getQueryParam(name) {
+    const params = new URLSearchParams(window.location.search);
+    return params.get(name);
+  }
+
+  // If token exists in URL, store and remove from URL to avoid leaking in history
+  function storeTokenFromUrl() {
+    const token = getQueryParam('token');
+    if (!token) return null;
     try {
-      const resp = await fetch(`${API_BASE || "https://ai-cv-backend-gojz.onrender.com"}/current_user`, {
-        credentials: 'include',
-        headers: { "Accept": "application/json" },
+      localStorage.setItem('cvmatcher_token', token);
+      // remove token from URL without reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, document.title, url.pathname + url.search);
+      return token;
+    } catch (e) {
+      console.error('storeTokenFromUrl error', e);
+      return null;
+    }
+  }
+
+  function getAuthToken() {
+    // prefer token from URL (just-in-time) then localStorage
+    const urlToken = storeTokenFromUrl();
+    if (urlToken) return urlToken;
+    return localStorage.getItem('cvmatcher_token');
+  }
+
+  function clearAuthToken() {
+    localStorage.removeItem('cvmatcher_token');
+  }
+
+  // Wrapper to call backend with Authorization header (if token present).
+  // If you still rely on cookies for some endpoints, you can pass { credentials: 'include' } explicitly.
+  async function fetchWithAuth(url, opts = {}) {
+    opts.headers = opts.headers || {};
+    const token = getAuthToken();
+    if (token) {
+      opts.headers['Authorization'] = 'Bearer ' + token;
+    }
+    const resp = await fetch(url, opts);
+    // if token expired or invalid, backend should return 401; clear it locally
+    if (resp.status === 401) {
+      clearAuthToken();
+    }
+    return resp;
+  }
+
+  // -------------------------
+  // API: current user
+  // -------------------------
+  async function fetchCurrentUser() {
+    try {
+      // Try JWT / Authorization first via fetchWithAuth
+      const resp = await fetchWithAuth(`${API_BASE}/current_user`, {
+        headers: { "Accept": "application/json" }
       });
 
-      // If backend returns 204 or no body, treat as no user
-      if (resp.status === 204) return null;
-
       if (!resp.ok) {
+        // treat 401 as unauthenticated (token expired/invalid)
+        if (resp.status === 401) return null;
+        // other non-OK statuses - log and return null
         console.error("current_user failed", resp.status);
         return null;
       }
@@ -54,63 +108,42 @@
     }
   }
 
+  // -------------------------
+  // Login button wiring
+  // -------------------------
+  // Any element with [data-auth-login] will redirect to backend login
+  document.querySelectorAll('[data-auth-login]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Redirect the browser to backend which initiates Google OAuth
+      window.location.href = `${API_BASE}/auth/login?next=/`;
+    });
+  });
 
+  // -------------------------
+  // Logout wiring
+  // -------------------------
   document.querySelectorAll('[data-auth-logout]').forEach(el => {
     el.addEventListener('click', async (e) => {
       e.preventDefault();
-      if (!API_BASE) { showNotification('Backend not configured', 'error'); return; }
+      // Clear local token immediately
+      clearAuthToken();
+      // Optionally call backend logout to clear server session (if any)
       try {
-        // If your backend expects GET for logout, change 'POST' to 'GET' here.
-        await fetch(`${API_BASE}/auth/logout`, { method: 'GET', credentials: 'include' });
+        await fetch(`${API_BASE}/auth/logout`, { method: 'GET' });
       } catch (err) {
-        console.warn('logout error', err);
+        // ignore but log
+        console.warn('logout request failed', err);
       } finally {
-        currentUser = null;
+        // redirect to frontend root (or reload)
         window.location.href = FRONTEND_BASE || "/";
       }
     });
   });
 
-  (async function init() {
-    currentUser = await fetchCurrentUser();
-
-    const userBlock = document.getElementById('user-block');
-    const loginBlock = document.getElementById('login-block');
-
-    if (currentUser) {
-      if (userBlock) {
-        userBlock.style.display = 'flex';
-        const pic = document.getElementById('user-pic');
-        const name = document.getElementById('user-name');
-        if (pic && currentUser.picture) pic.src = currentUser.picture;
-        if (name && currentUser.name) name.textContent = currentUser.name;
-      }
-      if (loginBlock) loginBlock.style.display = 'none';
-    } else {
-      if (userBlock) userBlock.style.display = 'none';
-      if (loginBlock) loginBlock.style.display = 'block';
-    }
-  })();  
-
-  // wire logout buttons
-  document.querySelectorAll('[data-auth-logout]').forEach(el => {
-    el.addEventListener('click', async (e) => {
-      e.preventDefault();
-      if (!API_BASE) { showNotification('Backend not configured', 'error'); return; }
-      try {
-        // call logout endpoint; backend should clear session cookie and redirect or return success
-        await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
-      } catch (err) {
-        console.warn('logout error', err);
-      } finally {
-        // refresh UI: clear user and reload page
-        currentUser = null;
-        window.location.href = FRONTEND_BASE || "/";
-      }
-    });
-  });
-
-  // front-end check before upload/match
+  // -------------------------
+  // requireLogin helper
+  // -------------------------
   function requireLogin() {
     if (!currentUser) {
       showNotification('Please sign in with Google first.', 'warning');
@@ -119,7 +152,9 @@
     return true;
   }
 
+  // -------------------------
   // Upload form handling
+  // -------------------------
   const cvUploadForm = document.getElementById('cv-upload-form');
   if (cvUploadForm) {
     cvUploadForm.addEventListener('submit', async function (e) {
@@ -135,7 +170,11 @@
       const uploadButton = document.getElementById('upload-button');
       if (uploadButton) uploadButton.disabled = true;
       try {
-        const resp = await fetch(`${API_BASE}/upload-cvs`, { method: 'POST', body: formData, credentials: 'include' });
+        const resp = await fetchWithAuth(`${API_BASE}/upload-cvs`, {
+          method: 'POST',
+          body: formData
+          // if backend requires cookies for upload, add credentials: 'include' here
+        });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Upload failed');
         showNotification(data.message || 'Uploaded', 'success');
@@ -147,7 +186,9 @@
     });
   }
 
+  // -------------------------
   // Job description match handling
+  // -------------------------
   const jdForm = document.getElementById('jd-form');
   if (jdForm) {
     jdForm.addEventListener('submit', async function (e) {
@@ -160,10 +201,9 @@
       const matchButton = document.getElementById('match-button');
       if (matchButton) matchButton.disabled = true;
       try {
-        const resp = await fetch(`${API_BASE}/match-cvs`, {
+        const resp = await fetchWithAuth(`${API_BASE}/match-cvs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ job_description: jd })
         });
         const results = await resp.json();
@@ -178,12 +218,9 @@
     });
   }
 
-  // handle matches-ready (optional)
-  document.addEventListener('matches-ready', (e) => {
-    console.log('Matches ready: ', e.detail);
-  });
-
+  // -------------------------
   // Drag & drop for upload zone (unchanged)
+  // -------------------------
   const uploadZone = document.getElementById('upload-zone');
   if (uploadZone) {
     ['dragenter','dragover'].forEach(ev => uploadZone.addEventListener(ev, ev2 => { ev2.preventDefault(); uploadZone.classList.add('dragover'); }));
@@ -197,16 +234,24 @@
     });
   }
 
-  // expose helpers and attempt to load current user on init
+  // expose helpers
   window._cvMatcher = { showNotification, requireLogin, getCurrentUser: () => currentUser };
 
+  // -------------------------
+  // Initialization on load
+  // -------------------------
   (async function init() {
+    // First, capture token from URL (if present) and store it
+    storeTokenFromUrl();
+
+    // Then try to fetch current user (via JWT or session)
     currentUser = await fetchCurrentUser();
-    // update UI if you have placeholders
+
+    // update UI: show profile if logged in else show login button
+    const userBlock = document.getElementById('user-block');
+    const loginBlock = document.getElementById('login-block');
+
     if (currentUser) {
-      // show/hide blocks if present
-      const userBlock = document.getElementById('user-block');
-      const loginBlock = document.getElementById('login-block');
       if (userBlock) {
         userBlock.style.display = 'flex';
         const pic = document.getElementById('user-pic');
@@ -216,11 +261,16 @@
       }
       if (loginBlock) loginBlock.style.display = 'none';
     } else {
-      const userBlock = document.getElementById('user-block');
-      const loginBlock = document.getElementById('login-block');
       if (userBlock) userBlock.style.display = 'none';
       if (loginBlock) loginBlock.style.display = 'block';
+      // optional: automatically redirect to backend login
+      //window.location.href = `${API_BASE}/auth/login?next=/`;
     }
   })();
+
+window._cvMatcher = window._cvMatcher || {};
+window._cvMatcher.fetchWithAuth = fetchWithAuth;
+window._cvMatcher.getAuthToken = getAuthToken;
+window._cvMatcher.storeTokenFromUrl = storeTokenFromUrl;
 
 })();
