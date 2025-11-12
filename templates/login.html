@@ -1,4 +1,3 @@
-<!-- templates/login.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -17,12 +16,32 @@
     <h1 style="font-size:22px;margin-bottom:6px">AI CV Matcher</h1>
     <p style="color:#cbd5e1;margin-bottom:18px">Sign in with Google to access the CV matching tool</p>
 
-    <!-- Sign-in button points at auth.login route in backend blueprint -->
-    <a href="{{ url_for('auth.login', next=url_for('index')) }}" class="btn">Sign in with Google</a>
+    <!-- Static link to backend login start. Replace the base URL if different -->
+    <a id="signin" class="btn" href="https://ai-cv-backend-gojz.onrender.com/auth/login?next=https%3A%2F%2Fghostwhite-fox-926923.hostingersite.com%2F">
+      Sign in with Google
+    </a>
 
     <p style="margin-top:16px;color:#94a3b8;font-size:13px">
       After signing in you'll be redirected back to the main app.
     </p>
   </div>
+
+  <script>
+    (function(){
+      const BACKEND = "https://ai-cv-backend-gojz.onrender.com";
+      const FRONTEND = "https://ghostwhite-fox-926923.hostingersite.com/";
+      const a = document.getElementById('signin');
+      if (a) {
+        a.href = BACKEND + "/auth/login?next=" + encodeURIComponent(FRONTEND);
+      }
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      if (token) {
+        localStorage.setItem('cvmatcher_token', token);
+        history.replaceState(null, '', window.location.pathname);
+       
+      }
+    })();
+  </script>
 </body>
 </html>
