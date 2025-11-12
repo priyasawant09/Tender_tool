@@ -1,12 +1,13 @@
 # backend/auth.py
 import os
 import time
+import secrets
 from urllib.parse import urljoin
 from functools import wraps
 
 from flask import Blueprint, session, redirect, url_for, request, jsonify, current_app
 from authlib.integrations.flask_client import OAuth
-import jwt  
+import jwt
 
 # JWT configuration
 JWT_SECRET = os.getenv("JWT_SECRET") or os.getenv("FLASK_SECRET_KEY") or "dev-jwt-secret"
@@ -15,6 +16,8 @@ JWT_TTL_SECONDS = int(os.getenv("JWT_TTL_SECONDS", 60 * 15))
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 oauth = OAuth()
+FRONTEND_URL = os.getenv("FRONTEND_URL") or "https://ghostwhite-fox-926923.hostingersite.com"
+
 
 # Setup OAuth client (call init_oauth(app) after creating the Flask app)
 def init_oauth(app):
@@ -26,6 +29,7 @@ def init_oauth(app):
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
         client_kwargs={"scope": "openid email profile"}
     )
+
 
 def login_required(f):
     """
@@ -70,6 +74,7 @@ def login_required(f):
 
     return decorated
 
+
 # Helper: safe redirect back to frontend (configurable)
 def frontend_url(path="/"):
     frontend = os.getenv("FRONTEND_URL") or current_app.config.get("FRONTEND_URL") or ""
@@ -77,21 +82,52 @@ def frontend_url(path="/"):
         return urljoin(frontend, path)
     return "/"
 
+
 # Route: start login (redirects to Google)
 @auth_bp.route("/login")
 def login():
+    # create a one-time nonce and save it in session so we can validate it after callback
+    nonce = secrets.token_urlsafe(16)
+    session['oauth_nonce'] = nonce
+    current_app.logger.info("Generated oauth_nonce and saved to session")
+
     redirect_uri = url_for("auth.callback", _external=True)
     next_url = request.args.get("next")
     if next_url:
         session["next_url"] = next_url
-    return oauth.google.authorize_redirect(redirect_uri)
+
+    # Pass nonce explicitly as an authorize param — Authlib will include it in the request
+    return oauth.google.authorize_redirect(redirect_uri, nonce=nonce)
+
 
 # Route: OAuth callback - exchange code, build short JWT, redirect to frontend with token
 @auth_bp.route("/callback")
 def callback():
     try:
+        # Exchange authorization code for tokens (token includes id_token)
         token = oauth.google.authorize_access_token()
-        userinfo = oauth.google.parse_id_token(token)
+        current_app.logger.info("authorize_access_token returned keys: %s", list(token.keys()))
+    except Exception as e:
+        current_app.logger.exception("OAuth token exchange failed: %s", e)
+        frontend = os.getenv("FRONTEND_URL") or current_app.config.get("FRONTEND_URL") or ""
+        if frontend:
+            return redirect(frontend + "/?auth_error=1")
+        return redirect("/?auth_error=1")
+
+    # Pop the nonce generated before redirect (one-time use)
+    nonce = session.pop('oauth_nonce', None)
+    if not nonce:
+        current_app.logger.error("No nonce in session during callback")
+        frontend = os.getenv("FRONTEND_URL") or current_app.config.get("FRONTEND_URL") or ""
+        if frontend:
+            return redirect(frontend + "/?auth_error=1")
+        return redirect("/?auth_error=1")
+
+    # Parse ID token with nonce validation
+    try:
+        # pass the nonce positional argument (Authlib expects (token, nonce=...))
+        userinfo = oauth.google.parse_id_token(token, nonce=nonce)
+        current_app.logger.info("Parsed ID token for user: %s", userinfo.get("email"))
     except Exception as e:
         current_app.logger.exception("OAuth token exchange failed: %s", e)
         frontend = os.getenv("FRONTEND_URL") or current_app.config.get("FRONTEND_URL") or ""
@@ -131,10 +167,12 @@ def callback():
     # fallback simple response (dev)
     return f"Token: {token_jwt}"
 
+
 # Alternate route name if your Google redirect URI points to /auth/google/callback
 @auth_bp.route("/google/callback")
 def google_callback():
     return callback()
+
 
 # Logout
 @auth_bp.route("/logout", methods=["POST", "GET"])
@@ -142,6 +180,7 @@ def logout():
     session.pop("user", None)
     # For JWT-based flows the frontend should simply remove the token client-side.
     return redirect(frontend_url("/"))
+
 
 # Endpoint used by frontend to get current user (supports session or Bearer JWT)
 @auth_bp.route("/current_user", methods=["GET"])
@@ -167,6 +206,7 @@ def current_user():
 
     # no auth found
     return jsonify({"user": None}), 200
+
 
 # If you prefer /current_user at root (not under /auth), export a function to register that route on app
 def register_current_user_route(app):

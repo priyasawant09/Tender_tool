@@ -26,13 +26,16 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 app = Flask(__name__, static_folder="frontend_hostinger/Static", template_folder="templates")
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY or "dev-secret-change-me"
 
+
 # Session and Security Configuration
 IS_PRODUCTION = os.getenv("ENV") == "production" or os.getenv("FLASK_ENV") == "production"
 app.config.update({
-    "SESSION_COOKIE_SAMESITE": "None",
+    "SESSION_COOKIE_SAMESITE": "Lax",
     "SESSION_COOKIE_SECURE": True if IS_PRODUCTION else False,
     "SESSION_COOKIE_HTTPONLY": True,
     "PREFERRED_URL_SCHEME": "https"
+
+    
 })
 
 # Ensure CV folder exists
