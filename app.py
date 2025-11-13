@@ -149,52 +149,71 @@ def upload_cvs():
 @cross_origin(origin="https://ghostwhite-fox-926923.hostingersite.com", methods=["POST","OPTIONS"])
 @login_required
 def match_cvs():
-    """Match uploaded CVs against the job description."""
-    data = request.get_json()
-    if not data or not data.get('job_description', '').strip():
-        return jsonify({'error': 'Job description is required'}), 400
+    try:
+        # If this is an OPTIONS preflight, return quickly
+        if request.method == "OPTIONS":
+            return jsonify({"ok": True}), 200
 
-    job_description = data['job_description']
-    results = []
+        data = request.get_json()
+        if not data or not data.get('job_description', '').strip():
+            return jsonify({'error': 'Job description is required'}), 400
 
-    for filename in os.listdir(CVS_FOLDER):
-        filepath = os.path.join(CVS_FOLDER, filename)
-        if os.path.isfile(filepath) and allowed_file(filename):
-            try:
-                parsed_text = parse_cv(filepath)
-                initial_state = {
-                    "jd_text": job_description,
-                    "cv_text": parsed_text,
-                    "results": {},
-                    "final_output": {}
-                }
-                final_state = ai_graph_app.invoke(initial_state)
-                match_result = final_state.get("final_output", {})
+        job_description = data['job_description']
+        results = []
 
-                if 'overall_score' in match_result:
+        # keep your per-file try/except to avoid aborting all files
+        for filename in os.listdir(CVS_FOLDER):
+            filepath = os.path.join(CVS_FOLDER, filename)
+            if os.path.isfile(filepath) and allowed_file(filename):
+                try:
+                    parsed_text = parse_cv(filepath)
+                    initial_state = {
+                        "jd_text": job_description,
+                        "cv_text": parsed_text,
+                        "results": {},
+                        "final_output": {}
+                    }
+                    # protect graph invocation with try/except
+                    try:
+                        final_state = ai_graph_app.invoke(initial_state)
+                        match_result = final_state.get("final_output", {})
+                    except Exception as gerr:
+                        print(f"Graph invocation failed for {filename}: {gerr}")
+                        import traceback; traceback.print_exc()
+                        match_result = {}
+
+                    if 'overall_score' in match_result:
+                        results.append({
+                            'filename': filename,
+                            'overall_score': match_result['overall_score'],
+                            'details': match_result['details']
+                        })
+                except Exception as e:
+                    print(f"Error processing {filename}: {e}")
+                    import traceback; traceback.print_exc()
                     results.append({
                         'filename': filename,
-                        'overall_score': match_result['overall_score'],
-                        'details': match_result['details']
+                        'overall_score': 0,
+                        'details': {
+                            'skills': {'score': 0, 'explanation': str(e)},
+                            'experience': {'score': 0, 'explanation': str(e)},
+                            'education': {'score': 0, 'explanation': str(e)},
+                            'projects': {'score': 0, 'explanation': str(e)},
+                        }
                     })
-            except Exception as e:
-                print(f"Error processing {filename}: {e}")
-                results.append({
-                    'filename': filename,
-                    'overall_score': 0,
-                    'details': {
-                        'skills': {'score': 0, 'explanation': str(e)},
-                        'experience': {'score': 0, 'explanation': str(e)},
-                        'education': {'score': 0, 'explanation': str(e)},
-                        'projects': {'score': 0, 'explanation': str(e)},
-                    }
-                })
 
-    if not results:
-        return jsonify({'error': 'No valid CVs processed.'}), 404
+        if not results:
+            return jsonify({'error': 'No valid CVs processed.'}), 404
 
-    sorted_results = sorted(results, key=lambda x: x['overall_score'], reverse=True)
-    return jsonify(sorted_results), 200
+        sorted_results = sorted(results, key=lambda x: x['overall_score'], reverse=True)
+        return jsonify(sorted_results), 200
+
+    except Exception as e:
+        # global handler — log full traceback for Render logs
+        print("FATAL error in /match-cvs:", e)
+        import traceback; traceback.print_exc()
+        # return JSON so browser can show the error (we'll add CORS headers globally too)
+        return jsonify({"error": "internal server error", "detail": str(e)}), 500
 
 # Run Flask App
 if __name__ == '__main__':

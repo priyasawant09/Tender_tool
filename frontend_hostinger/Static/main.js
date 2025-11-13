@@ -2,8 +2,8 @@
 (() => {
   // Runtime config (ensure config.js loads before this)
   const APP_CONFIG = window.APP_CONFIG || {};
-  const API_BASE = APP_CONFIG.API_BASE || "https://ai-cv-backend-gojz.onrender.com";
-  const FRONTEND_BASE = APP_CONFIG.FRONTEND_BASE || "https://ghostwhite-fox-926923.hostingersite.com";
+  const API_BASE = (APP_CONFIG.API_BASE || window.API_BASE) || "https://ai-cv-backend-gojz.onrender.com";
+  const FRONTEND_BASE = (APP_CONFIG.FRONTEND_BASE || window.FRONTEND_BASE) || "https://ghostwhite-fox-926923.hostingersite.com";
 
   // currentUser will be loaded from backend on page load (via JWT or session)
   let currentUser = null;
@@ -54,7 +54,6 @@
   }
 
   function getAuthToken() {
-    // prefer token from URL (just-in-time) then localStorage
     const urlToken = storeTokenFromUrl();
     if (urlToken) return urlToken;
     return localStorage.getItem('cvmatcher_token');
@@ -64,8 +63,7 @@
     localStorage.removeItem('cvmatcher_token');
   }
 
-  // Wrapper to call backend with Authorization header (if token present).
-  // If you still rely on cookies for some endpoints, you can pass { credentials: 'include' } explicitly.
+  
   async function fetchWithAuth(url, opts = {}) {
     opts.headers = opts.headers || {};
     const token = getAuthToken();
@@ -73,7 +71,6 @@
       opts.headers['Authorization'] = 'Bearer ' + token;
     }
     const resp = await fetch(url, opts);
-    // if token expired or invalid, backend should return 401; clear it locally
     if (resp.status === 401) {
       clearAuthToken();
     }
@@ -85,13 +82,11 @@
   // -------------------------
   async function fetchCurrentUser() {
     try {
-      // Try JWT / Authorization first via fetchWithAuth
       const resp = await fetchWithAuth(`${API_BASE}/current_user`, {
         headers: { "Accept": "application/json" }
       });
 
       if (!resp.ok) {
-        // treat 401 as unauthenticated (token expired/invalid)
         if (resp.status === 401) return null;
         // other non-OK statuses - log and return null
         console.error("current_user failed", resp.status);
