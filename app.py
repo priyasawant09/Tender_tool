@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 from backend.parsing import parse_cv
 from backend.ai_matching import setup_graph
 from backend.auth import auth_bp, init_oauth, login_required, register_current_user_route
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 
 # Environment Variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -43,11 +43,30 @@ os.makedirs(CVS_FOLDER, exist_ok=True)
 
 # CORS Configuration
 allowed_origins = [
-    FRONTEND_URL,
     "https://ghostwhite-fox-926923.hostingersite.com",
     "http://localhost:5000"
 ]
-CORS(app, origins=allowed_origins, supports_credentials=True, allow_headers=['Content-Type','Authorization'])
+CORS(
+    app,
+    origins=allowed_origins,
+    supports_credentials=False,               
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "OPTIONS"]        
+)
+
+@app.after_request
+def always_add_cors_headers(response):
+    origin = request.headers.get("Origin")
+    allowed = [
+        "https://ghostwhite-fox-926923.hostingersite.com",
+        "http://localhost:5000"
+    ]
+    if origin in allowed:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    # if you later use cookies: set Access-Control-Allow-Credentials appropriately
+    return response
 
 
 # OAuth Setup
@@ -127,6 +146,7 @@ def upload_cvs():
 
 # CV Matching API
 @app.route('/match-cvs', methods=['POST'])
+@cross_origin(origin="https://ghostwhite-fox-926923.hostingersite.com", methods=["POST","OPTIONS"])
 @login_required
 def match_cvs():
     """Match uploaded CVs against the job description."""
