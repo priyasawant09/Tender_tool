@@ -294,6 +294,9 @@ def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
 def skills_node(state: MatchingState):
     print("--- Running Skills Node ---")
     prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    if len(cv_text) > 12000:
+        cv_text = cv_text[:12000]   # keep only first 12k chars
+        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
     response_str = call_gemini_api(prompt_text, category="skills")
     current_results = state.get("results", {})
     current_results["skills"] = json.loads(response_str)
@@ -302,6 +305,9 @@ def skills_node(state: MatchingState):
 def experience_node(state: MatchingState):
     print("--- Running Experience Node ---")
     prompt_text = experience_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    if len(cv_text) > 12000:
+        cv_text = cv_text[:12000]   # keep only first 12k chars
+        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
     response_str = call_gemini_api(prompt_text, category="experience")
     current_results = state.get("results", {})
     current_results["experience"] = json.loads(response_str)
@@ -310,6 +316,9 @@ def experience_node(state: MatchingState):
 def education_node(state: MatchingState):
     print("--- Running Education Node ---")
     prompt_text = education_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    if len(cv_text) > 12000:
+        cv_text = cv_text[:12000]   # keep only first 12k chars
+        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
     response_str = call_gemini_api(prompt_text, category="education")
     current_results = state.get("results", {})
     current_results["education"] = json.loads(response_str)
@@ -318,6 +327,9 @@ def education_node(state: MatchingState):
 def projects_node(state: MatchingState):
     print("--- Running Projects Node ---")
     prompt_text = projects_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    if len(cv_text) > 12000:
+        cv_text = cv_text[:12000]   # keep only first 12k chars
+        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
     response_str = call_gemini_api(prompt_text, category="projects")
     current_results = state.get("results", {})
     current_results["projects"] = json.loads(response_str)
