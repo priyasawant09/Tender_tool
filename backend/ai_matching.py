@@ -204,109 +204,53 @@ def extract_json_object_from_text(text: str):
 # -----------------------------
 def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
     """
-    Robust Gemini caller.
-    Returns a string. Preferably a JSON-serialisable string (json.dumps of an object)
-    or plain text that will be parsed downstream.
+    Call Gemini with the *minimal valid* request shape that works:
+      { "contents": [ { "parts": [ { "text": "..." } ] } ] }
+
+    Returns the model text (unparsed). On error, returns a JSON string describing the error
+    so downstream parsing won't crash.
     """
-    # Mock mode for local dev or missing API key
     if USE_MOCK_GEMINI or not GEMINI_API_KEY:
         mock = {
-            "skills": {"skills_score": 8, "explanation": "Mock: Python and SQL found."},
-            "experience": {"experience_score": 6, "explanation": "Mock: 3 years vs required 5."},
-            "education": {"education_score": 9, "explanation": "Mock: B.Tech in CS."},
-            "projects": {"projects_score": 7, "explanation": "Mock: Relevant project."},
-            "summary": "Skills: Python, SQL. Experience: 5 years. Education: B.Tech."
+            "skills": json.dumps({"skills_score": 8, "explanation": "Mock: Python and SQL found."}),
+            "experience": json.dumps({"experience_score": 6, "explanation": "Mock: 3 years vs required 5."}),
+            "education": json.dumps({"education_score": 9, "explanation": "Mock: B.Tech in CS."}),
+            "projects": json.dumps({"projects_score": 7, "explanation": "Mock: Relevant project."}),
+            "generic": json.dumps({"score": 0, "explanation": "Mock default"})
         }
-        return json.dumps(mock.get(category, mock["summary"]))
+        return mock.get(category, mock["generic"])
 
+    payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "temperature": 0.0,
-        "candidateCount": 1,
-        "maxOutputTokens": 512,
-        "contents": [{"parts": [{"text": prompt_text}]}]
-    }
 
     try:
-        resp = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=30)
-    except Exception as e:
-        print(f"[ai_matching] Gemini network error for '{category}': {e}")
-        return json.dumps({"score": 0, "explanation": f"Network error: {e}"})
+        resp = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+    except requests.Timeout:
+        print(f"[ai_matching] Gemini timeout for '{category}'")
+        return json.dumps({"score": 0, "explanation": "Gemini timeout"})
+    except requests.RequestException as e:
+        print(f"[ai_matching] Gemini request exception for '{category}': {e}")
+        return json.dumps({"score": 0, "explanation": f"Gemini request exception: {str(e)[:200]}"})
 
-    txt = resp.text or ""
-    print(f"[ai_matching] Gemini status {resp.status_code} for '{category}'. Body (truncated): {txt[:800]!s}")
-
+    # Non-200 -> return safe JSON string with snippet
     if resp.status_code != 200:
-        return json.dumps({"score": 0, "explanation": f"Gemini non-200: {resp.status_code}", "raw": txt[:2000]})
+        body = resp.text[:2000]
+        print(f"[ai_matching] Gemini non-200: {resp.status_code} Body (truncated):")
+        print(body)
+        return json.dumps({"score": 0, "explanation": f"Gemini non-200:{resp.status_code}", "raw": body[:1000]})
 
-    # parse canonical response
+    # Try to extract text candidate
     try:
         resp_json = resp.json()
-        text_out = resp_json["candidates"][0]["content"]["parts"][0]["text"] or ""
+        text = resp_json["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"[ai_matching] Failed to decode Gemini response JSON: {e}")
-        print("Raw body (truncated):", txt[:2000])
-        return json.dumps({"score": 0, "explanation": "Gemini returned unexpected HTTP body", "raw": txt[:2000]})
+        print("[ai_matching] Failed to parse Gemini JSON:", e)
+        print("Raw response (truncated):", resp.text[:2000])
+        return json.dumps({"score": 0, "explanation": "Gemini returned unexpected structure", "raw": resp.text[:1000]})
 
-    text_out = text_out.strip()
+    # return the raw model text (caller will attempt to extract JSON from it)
+    return text.strip()
 
-    # 1) If model returned pure JSON text - return that
-    try:
-        parsed = json.loads(text_out)
-        return json.dumps(parsed)
-    except Exception:
-        pass
-
-    # 2) Try to extract JSON substring
-    try:
-        extracted = extract_json_object_from_text(text_out)
-        if extracted is not None:
-            return json.dumps(extracted)
-    except Exception:
-        pass
-
-    # 3) Recovery: ask model to return only JSON (single-shot recovery)
-    recovery_prompt = (
-        "The previous response from you is shown between triple quotes. "
-        "Extract and RETURN ONLY the single JSON object contained in that text. "
-        "If no JSON object is present, reply exactly: {\"error\":\"no_json_found\"}\n\n"
-        "Previous response:\n\"\"\"\n" + text_out[:6000] + "\n\"\"\"\n\nReturn only the JSON object, nothing else."
-    )
-    recovery_payload = {
-        "temperature": 0.0,
-        "candidateCount": 1,
-        "maxOutputTokens": 512,
-        "contents": [{"parts": [{"text": recovery_prompt}]}]
-    }
-
-    try:
-        rec_resp = requests.post(API_URL, headers=headers, data=json.dumps(recovery_payload), timeout=20)
-        rec_txt = rec_resp.text or ""
-        print(f"[ai_matching] Recovery status {rec_resp.status_code} for '{category}'. Body (truncated): {rec_txt[:800]!s}")
-        if rec_resp.status_code != 200:
-            return json.dumps({"score": 0, "explanation": f"Recovery non-200: {rec_resp.status_code}", "raw": txt[:2000]})
-        rec_json = rec_resp.json()
-        rec_text = rec_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        print(f"[ai_matching] Recovery request failed: {e}")
-        return json.dumps({"score": 0, "explanation": "Recovery request failed", "raw": text_out[:2000]})
-
-    try:
-        parsed = json.loads(rec_text)
-        return json.dumps(parsed)
-    except Exception:
-        extracted2 = extract_json_object_from_text(rec_text)
-        if extracted2 is not None:
-            return json.dumps(extracted2)
-
-    # Final fail - return raw snippets for debugging
-    print("[ai_matching] FINAL FAIL: primary (trunc):", text_out[:800])
-    print("[ai_matching] FINAL FAIL: recovery (trunc):", rec_text[:800])
-    return json.dumps({
-        "score": 0,
-        "explanation": "Invalid JSON from Gemini API after recovery attempts.",
-        "raw": {"primary": text_out[:800], "recovery": rec_text[:800]}
-    })
 
 # -----------------------------
 # Helpers: safe parsing wrapper
@@ -388,7 +332,7 @@ def skills_node(state: MatchingState):
         prompt_text = skills_prompt.format(jd_text=jd_text, cv_text=cv_text)
     except Exception as e:
         print("[ai_matching] skills_prompt.format() failed:", e)
-        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
+        prompt_text = getattr(skills_prompt, "template", "Job: {jd_text}\nCV: {cv_text}").format(jd_text=jd_text[:2000], cv_text=cv_text[:2000])
 
     response_str = call_gemini_api(prompt_text, category="skills")
     parsed = _safe_parse_response(response_str, "skills")
