@@ -291,49 +291,144 @@ def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
 
 
 # Node functions
+# Helper: safe parse of response_str (uses your extractor if available)
+def _safe_parse_response(response_str: str, category_key: str):
+    # If response_str is already JSON string, try direct loads
+    try:
+        parsed = json.loads(response_str)
+        return parsed
+    except Exception:
+        pass
+
+    # Try extractor if you defined one earlier (extract_json_object_from_text)
+    try:
+        parsed = extract_json_object_from_text(response_str)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    # Final fallback: return structured error dict so downstream code doesn't crash
+    return {f"{category_key}_score": 0, "explanation": "Invalid JSON from Gemini API or API error.", "raw": (response_str or "")[:1000]}
+
+
 def skills_node(state: MatchingState):
     print("--- Running Skills Node ---")
-    prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    # safe cv_text fetch
+    cv_text = state.get("cv_text", "") or ""
+    # truncate safely
     if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]   # keep only first 12k chars
-        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
+        cv_text = cv_text[:12000]
+
+    # safe jd_text fetch
+    jd_text = state.get("jd_text", "") or ""
+
+    # format prompt (guard formatting errors)
+    try:
+        prompt_text = skills_prompt.format(jd_text=jd_text, cv_text=cv_text)
+    except Exception as e:
+        print("[ai_matching] skills_prompt.format() failed:", e)
+        prompt_text = skills_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(skills_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+
     response_str = call_gemini_api(prompt_text, category="skills")
-    current_results = state.get("results", {})
-    current_results["skills"] = json.loads(response_str)
+    parsed = _safe_parse_response(response_str, "skills")
+
+    # normalize keys and defaults
+    if isinstance(parsed, dict):
+        parsed.setdefault("skills_score", parsed.get("score", 0))
+        parsed.setdefault("explanation", parsed.get("explanation", ""))
+    else:
+        parsed = {"skills_score": 0, "explanation": "Unexpected response type from Gemini."}
+
+    current_results = state.get("results", {}) or {}
+    current_results["skills"] = parsed
+    state["results"] = current_results
     return {"results": current_results}
+
 
 def experience_node(state: MatchingState):
     print("--- Running Experience Node ---")
-    prompt_text = experience_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    cv_text = state.get("cv_text", "") or ""
     if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]   # keep only first 12k chars
-        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
+        cv_text = cv_text[:12000]
+    jd_text = state.get("jd_text", "") or ""
+
+    try:
+        prompt_text = experience_prompt.format(jd_text=jd_text, cv_text=cv_text)
+    except Exception as e:
+        print("[ai_matching] experience_prompt.format() failed:", e)
+        prompt_text = experience_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(experience_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+
     response_str = call_gemini_api(prompt_text, category="experience")
-    current_results = state.get("results", {})
-    current_results["experience"] = json.loads(response_str)
+    parsed = _safe_parse_response(response_str, "experience")
+
+    if isinstance(parsed, dict):
+        parsed.setdefault("experience_score", parsed.get("score", 0))
+        parsed.setdefault("explanation", parsed.get("explanation", ""))
+    else:
+        parsed = {"experience_score": 0, "explanation": "Unexpected response type from Gemini."}
+
+    current_results = state.get("results", {}) or {}
+    current_results["experience"] = parsed
+    state["results"] = current_results
     return {"results": current_results}
+
 
 def education_node(state: MatchingState):
     print("--- Running Education Node ---")
-    prompt_text = education_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    cv_text = state.get("cv_text", "") or ""
     if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]   # keep only first 12k chars
-        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
+        cv_text = cv_text[:12000]
+    jd_text = state.get("jd_text", "") or ""
+
+    try:
+        prompt_text = education_prompt.format(jd_text=jd_text, cv_text=cv_text)
+    except Exception as e:
+        print("[ai_matching] education_prompt.format() failed:", e)
+        prompt_text = education_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(education_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+
     response_str = call_gemini_api(prompt_text, category="education")
-    current_results = state.get("results", {})
-    current_results["education"] = json.loads(response_str)
+    parsed = _safe_parse_response(response_str, "education")
+
+    if isinstance(parsed, dict):
+        parsed.setdefault("education_score", parsed.get("score", 0))
+        parsed.setdefault("explanation", parsed.get("explanation", ""))
+    else:
+        parsed = {"education_score": 0, "explanation": "Unexpected response type from Gemini."}
+
+    current_results = state.get("results", {}) or {}
+    current_results["education"] = parsed
+    state["results"] = current_results
     return {"results": current_results}
+
 
 def projects_node(state: MatchingState):
     print("--- Running Projects Node ---")
-    prompt_text = projects_prompt.format(jd_text=state["jd_text"], cv_text=state["cv_text"])
+    cv_text = state.get("cv_text", "") or ""
     if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]   # keep only first 12k chars
-        prompt_text = skills_prompt.format(jd_text=state["jd_text"], cv_text=cv_text)
+        cv_text = cv_text[:12000]
+    jd_text = state.get("jd_text", "") or ""
+
+    try:
+        prompt_text = projects_prompt.format(jd_text=jd_text, cv_text=cv_text)
+    except Exception as e:
+        print("[ai_matching] projects_prompt.format() failed:", e)
+        prompt_text = projects_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(projects_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+
     response_str = call_gemini_api(prompt_text, category="projects")
-    current_results = state.get("results", {})
-    current_results["projects"] = json.loads(response_str)
+    parsed = _safe_parse_response(response_str, "projects")
+
+    if isinstance(parsed, dict):
+        parsed.setdefault("projects_score", parsed.get("score", 0))
+        parsed.setdefault("explanation", parsed.get("explanation", ""))
+    else:
+        parsed = {"projects_score": 0, "explanation": "Unexpected response type from Gemini."}
+
+    current_results = state.get("results", {}) or {}
+    current_results["projects"] = parsed
+    state["results"] = current_results
     return {"results": current_results}
+
 
 def aggregate_node(state: MatchingState):
     """
