@@ -110,7 +110,7 @@ def current_user():
 
 # CV Upload endpoint
 @app.route('/upload-cvs', methods=['POST'])
-@login_required
+
 def upload_cvs():
     if os.path.exists(CVS_FOLDER):
         shutil.rmtree(CVS_FOLDER)
@@ -132,7 +132,7 @@ def upload_cvs():
 # Match endpoint: accepts OPTIONS and POST; cross_origin outermost so CORS headers set even if login_required denies
 @app.route('/match-cvs', methods=['POST', 'OPTIONS'])
 @cross_origin(origin="https://ghostwhite-fox-926923.hostingersite.com", methods=["POST", "OPTIONS"])
-@login_required
+
 def match_cvs():
     try:
         if request.method == "OPTIONS":
@@ -224,6 +224,12 @@ def match_cvs():
         print("[app] FATAL error in /match-cvs:", e)
         traceback.print_exc()
         return jsonify({"error": "internal server error", "detail": str(e)}), 500
+    
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status":"ok"}), 200
+
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 8000))
