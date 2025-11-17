@@ -194,7 +194,7 @@ def extract_json_from_text(text: str):
 
 
 
-def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
+
     """
     Gemini caller with:
     - strict parameters
@@ -255,6 +255,40 @@ def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
         "explanation": "Invalid JSON from Gemini API or API error.",
         "raw": text[:300]
     })
+
+def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
+    if USE_MOCK_GEMINI or not GEMINI_API_KEY:
+        # existing mock...
+        ...
+    headers = {"Content-Type": "application/json"}
+    # start with minimal payload (avoid sending huge prompt in one shot — test with short prompt)
+    payload = {"contents":[{"parts":[{"text": prompt_text}]}]}
+
+    try:
+        resp = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=30)
+    except Exception as e:
+        print("[ai_matching] Network error calling Gemini:", e)
+        return json.dumps({"score": 0, "explanation": f"Network error: {e}"})
+
+    if resp.status_code != 200:
+        # log and return body for debugging
+        print(f"[ai_matching] Gemini returned {resp.status_code}. Body (truncated):")
+        print(resp.text[:2000])
+        return json.dumps({
+            "score": 0,
+            "explanation": f"Gemini non-200: {resp.status_code}",
+            "raw_error": resp.text[:2000]
+        })
+
+    try:
+        data = resp.json()
+        text_out = data["candidates"][0]["content"]["parts"][0]["text"]
+        return text_out.strip()
+    except Exception as e:
+        print("[ai_matching] Failed to parse successful Gemini response:", e)
+        print("Raw:", resp.text[:2000])
+        return json.dumps({"score":0, "explanation":"Gemini returned unexpected structure", "raw": resp.text[:2000]})
+
 
 # Node functions
 def skills_node(state: MatchingState):
