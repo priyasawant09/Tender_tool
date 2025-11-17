@@ -46,7 +46,7 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"skills_score": 8, "explanation": "Strengths: Strong evidence for Python and SQL as required. Gaps: Missing experience with AWS."}}
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
                                                                                           
 """)
 
@@ -78,7 +78,7 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"experience_score": 6, "explanation": "Strengths: Roles in software development are relevant. Gaps: Candidate has 3 years of experience, while the JD requires 5+ years."}}
                                                  
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
 
 """)
 
@@ -111,7 +111,7 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"education_score": 9, "explanation": "Candidate holds a B.Tech in Computer Science, which matches the job requirement."}}
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
 
     """)
 
@@ -144,9 +144,8 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"projects_score": 10, "explanation": "Strengths: The 'AI-based CV Matching Tool' project is extremely relevant and demonstrates direct, hands-on experience for this role."}}
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
-                                               
-                                               """)
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
+ """)
 
 
 
@@ -197,7 +196,7 @@ def extract_json_from_text(text: str):
 
 def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
     """
-    Robust Gemini caller with:
+    Gemini caller with:
     - strict parameters
     - fallback JSON extractor
     - recovery call if JSON invalid
