@@ -46,7 +46,7 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"skills_score": 8, "explanation": "Strengths: Strong evidence for Python and SQL as required. Gaps: Missing experience with AWS."}}
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
                                                                                           
 """)
 
@@ -78,7 +78,7 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"experience_score": 6, "explanation": "Strengths: Roles in software development are relevant. Gaps: Candidate has 3 years of experience, while the JD requires 5+ years."}}
                                                  
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
 
 """)
 
@@ -111,7 +111,7 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"education_score": 9, "explanation": "Candidate holds a B.Tech in Computer Science, which matches the job requirement."}}
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
 
     """)
 
@@ -144,11 +144,8 @@ Your final response MUST BE a single, clean JSON object and nothing else. Do not
 **Example Output:**
 {{"projects_score": 10, "explanation": "Strengths: The 'AI-based CV Matching Tool' project is extremely relevant and demonstrates direct, hands-on experience for this role."}}
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {{"error":"no_json_found"}}.
+IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
  """)
-
-
-
 
 # -----------------------------
 # State
@@ -160,147 +157,169 @@ class MatchingState(TypedDict):
     final_output: dict
 
 # -----------------------------
-# Helpers: extract JSON from mixed text
+# Helpers
 # -----------------------------
-
-def extract_json_from_text(text: str):
-    if not text:
+def extract_json_object_from_text(text: str):
+    """
+    Find a balanced { ... } JSON object in noisy text and return the parsed object if found.
+    Returns None if no valid JSON object can be extracted.
+    """
+    if not text or not isinstance(text, str):
         return None
 
-    text = text.strip()
-    # remove markdown
-    text = re.sub(r"^```(?:json)?", "", text)
-    text = re.sub(r"```$", "", text)
+    s = text.strip()
+    # strip code fences
+    s = re.sub(r"^```(?:json)?\s*", "", s)
+    s = re.sub(r"\s*```$", "", s)
 
-    # find first {...} block
-    start = text.find("{")
-    if start == -1:
-        return None
+    # quick direct parse
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
 
-    stack = 0
-    for i in range(start, len(text)):
-        if text[i] == "{":
-            stack += 1
-        elif text[i] == "}":
-            stack -= 1
-            if stack == 0:
-                block = text[start:i+1]
-                try:
-                    return json.loads(block)
-                except:
-                    return None
-    return None
+    # find candidates by scanning for '{' and matching braces
+    starts = [i for i, ch in enumerate(s) if ch == '{']
+    best = None
+    for start in starts:
+        stack = 0
+        for i in range(start, len(s)):
+            if s[i] == '{':
+                stack += 1
+            elif s[i] == '}':
+                stack -= 1
+                if stack == 0:
+                    cand = s[start:i+1]
+                    try:
+                        parsed = json.loads(cand)
+                        if not best or len(cand) > len(best[0]):
+                            best = (cand, parsed)
+                    except Exception:
+                        pass
+                    break
+    return best[1] if best else None
 
-
-
-
-
+# -----------------------------
+# Robust Gemini Caller
+# -----------------------------
+def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
     """
-    Gemini caller with:
-    - strict parameters
-    - fallback JSON extractor
-    - recovery call if JSON invalid
+    Robust Gemini caller.
+    Returns a string. Preferably a JSON-serialisable string (json.dumps of an object)
+    or plain text that will be parsed downstream.
     """
+    # Mock mode for local dev or missing API key
     if USE_MOCK_GEMINI or not GEMINI_API_KEY:
         mock = {
             "skills": {"skills_score": 8, "explanation": "Mock: Python and SQL found."},
             "experience": {"experience_score": 6, "explanation": "Mock: 3 years vs required 5."},
             "education": {"education_score": 9, "explanation": "Mock: B.Tech in CS."},
             "projects": {"projects_score": 7, "explanation": "Mock: Relevant project."},
+            "summary": "Skills: Python, SQL. Experience: 5 years. Education: B.Tech."
         }
-        return json.dumps(mock.get(category, {"score": 0, "explanation": "Mock default"}))
+        return json.dumps(mock.get(category, mock["summary"]))
 
+    headers = {"Content-Type": "application/json"}
     payload = {
         "temperature": 0.0,
         "candidateCount": 1,
         "maxOutputTokens": 512,
         "contents": [{"parts": [{"text": prompt_text}]}]
     }
-    headers = {"Content-Type": "application/json"}
-
-    try:
-        resp = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=25)
-    except Exception as e:
-        print("[Gemini] Network error:", e)
-        return json.dumps({"score": 0, "explanation": f"Network error: {e}"})
-
-    if resp.status_code != 200:
-        print("[Gemini] Non-200:", resp.status_code, resp.text[:500])
-        return json.dumps({"score": 0, "explanation": f"Gemini non-200: {resp.status_code}"})
-
-    try:
-        data = resp.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        print("[Gemini] Bad structure:", e)
-        return json.dumps({"score": 0, "explanation": "Bad Gemini JSON structure"})
-
-    text = text.strip()
-
-    # direct parse
-    try:
-        return json.dumps(json.loads(text))
-    except:
-        pass
-
-    # recover substrings
-    extracted = extract_json_from_text(text)
-    if extracted:
-        return json.dumps(extracted)
-
-    # fallback -- return readable error
-    print("[Gemini] FAILED PARSING RAW (snippet):", text[:300])
-    return json.dumps({
-        "score": 0,
-        "explanation": "Invalid JSON from Gemini API or API error.",
-        "raw": text[:300]
-    })
-
-def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
-    if USE_MOCK_GEMINI or not GEMINI_API_KEY:
-        # existing mock...
-        ...
-    headers = {"Content-Type": "application/json"}
-    # start with minimal payload (avoid sending huge prompt in one shot — test with short prompt)
-    payload = {"contents":[{"parts":[{"text": prompt_text}]}]}
 
     try:
         resp = requests.post(API_URL, headers=headers, data=json.dumps(payload), timeout=30)
     except Exception as e:
-        print("[ai_matching] Network error calling Gemini:", e)
+        print(f"[ai_matching] Gemini network error for '{category}': {e}")
         return json.dumps({"score": 0, "explanation": f"Network error: {e}"})
 
+    txt = resp.text or ""
+    print(f"[ai_matching] Gemini status {resp.status_code} for '{category}'. Body (truncated): {txt[:800]!s}")
+
     if resp.status_code != 200:
-        # log and return body for debugging
-        print(f"[ai_matching] Gemini returned {resp.status_code}. Body (truncated):")
-        print(resp.text[:2000])
-        return json.dumps({
-            "score": 0,
-            "explanation": f"Gemini non-200: {resp.status_code}",
-            "raw_error": resp.text[:2000]
-        })
+        return json.dumps({"score": 0, "explanation": f"Gemini non-200: {resp.status_code}", "raw": txt[:2000]})
+
+    # parse canonical response
+    try:
+        resp_json = resp.json()
+        text_out = resp_json["candidates"][0]["content"]["parts"][0]["text"] or ""
+    except Exception as e:
+        print(f"[ai_matching] Failed to decode Gemini response JSON: {e}")
+        print("Raw body (truncated):", txt[:2000])
+        return json.dumps({"score": 0, "explanation": "Gemini returned unexpected HTTP body", "raw": txt[:2000]})
+
+    text_out = text_out.strip()
+
+    # 1) If model returned pure JSON text - return that
+    try:
+        parsed = json.loads(text_out)
+        return json.dumps(parsed)
+    except Exception:
+        pass
+
+    # 2) Try to extract JSON substring
+    try:
+        extracted = extract_json_object_from_text(text_out)
+        if extracted is not None:
+            return json.dumps(extracted)
+    except Exception:
+        pass
+
+    # 3) Recovery: ask model to return only JSON (single-shot recovery)
+    recovery_prompt = (
+        "The previous response from you is shown between triple quotes. "
+        "Extract and RETURN ONLY the single JSON object contained in that text. "
+        "If no JSON object is present, reply exactly: {\"error\":\"no_json_found\"}\n\n"
+        "Previous response:\n\"\"\"\n" + text_out[:6000] + "\n\"\"\"\n\nReturn only the JSON object, nothing else."
+    )
+    recovery_payload = {
+        "temperature": 0.0,
+        "candidateCount": 1,
+        "maxOutputTokens": 512,
+        "contents": [{"parts": [{"text": recovery_prompt}]}]
+    }
 
     try:
-        data = resp.json()
-        text_out = data["candidates"][0]["content"]["parts"][0]["text"]
-        return text_out.strip()
+        rec_resp = requests.post(API_URL, headers=headers, data=json.dumps(recovery_payload), timeout=20)
+        rec_txt = rec_resp.text or ""
+        print(f"[ai_matching] Recovery status {rec_resp.status_code} for '{category}'. Body (truncated): {rec_txt[:800]!s}")
+        if rec_resp.status_code != 200:
+            return json.dumps({"score": 0, "explanation": f"Recovery non-200: {rec_resp.status_code}", "raw": txt[:2000]})
+        rec_json = rec_resp.json()
+        rec_text = rec_json["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
-        print("[ai_matching] Failed to parse successful Gemini response:", e)
-        print("Raw:", resp.text[:2000])
-        return json.dumps({"score":0, "explanation":"Gemini returned unexpected structure", "raw": resp.text[:2000]})
+        print(f"[ai_matching] Recovery request failed: {e}")
+        return json.dumps({"score": 0, "explanation": "Recovery request failed", "raw": text_out[:2000]})
 
+    try:
+        parsed = json.loads(rec_text)
+        return json.dumps(parsed)
+    except Exception:
+        extracted2 = extract_json_object_from_text(rec_text)
+        if extracted2 is not None:
+            return json.dumps(extracted2)
 
-# Node functions
-# Helper: safe parse of response_str (uses your extractor if available)
+    # Final fail - return raw snippets for debugging
+    print("[ai_matching] FINAL FAIL: primary (trunc):", text_out[:800])
+    print("[ai_matching] FINAL FAIL: recovery (trunc):", rec_text[:800])
+    return json.dumps({
+        "score": 0,
+        "explanation": "Invalid JSON from Gemini API after recovery attempts.",
+        "raw": {"primary": text_out[:800], "recovery": rec_text[:800]}
+    })
+
+# -----------------------------
+# Helpers: safe parsing wrapper
+# -----------------------------
 def _safe_parse_response(response_str: str, category_key: str):
-    # If response_str is already JSON string, try direct loads
+    # Try direct JSON
     try:
         parsed = json.loads(response_str)
         return parsed
     except Exception:
         pass
 
-    # Try extractor if you defined one earlier (extract_json_object_from_text)
+    # Try extract JSON object from noisy text
     try:
         parsed = extract_json_object_from_text(response_str)
         if isinstance(parsed, dict):
@@ -308,32 +327,72 @@ def _safe_parse_response(response_str: str, category_key: str):
     except Exception:
         pass
 
-    # Final fallback: return structured error dict so downstream code doesn't crash
+    # fallback
     return {f"{category_key}_score": 0, "explanation": "Invalid JSON from Gemini API or API error.", "raw": (response_str or "")[:1000]}
 
+# -----------------------------
+# Summarization node
+# -----------------------------
+def summarize_cv_node(state: MatchingState):
+    print("--- Running Summarization Node ---")
+    cv_text = state.get("cv_text", "") or ""
+    # limit pre-summarize size to avoid huge prompt in the summary step
+    if len(cv_text) > 25000:
+        cv_text = cv_text[:25000]
 
+    summary_prompt = f"""
+You are an expert HR assistant. Summarize the CV into a compact structured summary (max 3000 characters).
+
+Extract ONLY:
+- Skills (comma separated)
+- Total years of experience and key roles
+- Education (degrees)
+- Major relevant projects
+- Specific port/terminal/IWT related experience sections (if present)
+
+Return plain text summary only, no JSON. Keep it concise.
+CV:
+{cv_text}
+"""
+    response = call_gemini_api(summary_prompt, category="summary")
+    # call_gemini_api tries to return JSON strings for some categories; ensure we keep plain text summary
+    # If we received a JSON object, extract readable text or join fields; otherwise use returned text
+    try:
+        parsed = json.loads(response)
+        # If summary returned as object, create a readable text summary
+        if isinstance(parsed, dict):
+            # join key: value pairs into short summary string
+            parts = []
+            for k, v in parsed.items():
+                parts.append(f"{k}: {v}")
+            summary_text = " | ".join(parts)[:4000]
+        else:
+            summary_text = str(parsed)[:4000]
+    except Exception:
+        summary_text = str(response)[:4000]
+
+    # store summary in state for downstream nodes
+    return {"cv_summary": summary_text}
+
+# -----------------------------
+# Node functions (use summary fallback)
+# -----------------------------
 def skills_node(state: MatchingState):
     print("--- Running Skills Node ---")
-    # safe cv_text fetch
-    cv_text = state.get("cv_text", "") or ""
-    # truncate safely
+    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
     if len(cv_text) > 12000:
         cv_text = cv_text[:12000]
-
-    # safe jd_text fetch
     jd_text = state.get("jd_text", "") or ""
 
-    # format prompt (guard formatting errors)
     try:
         prompt_text = skills_prompt.format(jd_text=jd_text, cv_text=cv_text)
     except Exception as e:
         print("[ai_matching] skills_prompt.format() failed:", e)
-        prompt_text = skills_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(skills_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
 
     response_str = call_gemini_api(prompt_text, category="skills")
     parsed = _safe_parse_response(response_str, "skills")
 
-    # normalize keys and defaults
     if isinstance(parsed, dict):
         parsed.setdefault("skills_score", parsed.get("score", 0))
         parsed.setdefault("explanation", parsed.get("explanation", ""))
@@ -345,10 +404,9 @@ def skills_node(state: MatchingState):
     state["results"] = current_results
     return {"results": current_results}
 
-
 def experience_node(state: MatchingState):
     print("--- Running Experience Node ---")
-    cv_text = state.get("cv_text", "") or ""
+    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
     if len(cv_text) > 12000:
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
@@ -357,7 +415,7 @@ def experience_node(state: MatchingState):
         prompt_text = experience_prompt.format(jd_text=jd_text, cv_text=cv_text)
     except Exception as e:
         print("[ai_matching] experience_prompt.format() failed:", e)
-        prompt_text = experience_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(experience_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
 
     response_str = call_gemini_api(prompt_text, category="experience")
     parsed = _safe_parse_response(response_str, "experience")
@@ -373,10 +431,9 @@ def experience_node(state: MatchingState):
     state["results"] = current_results
     return {"results": current_results}
 
-
 def education_node(state: MatchingState):
     print("--- Running Education Node ---")
-    cv_text = state.get("cv_text", "") or ""
+    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
     if len(cv_text) > 12000:
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
@@ -385,7 +442,7 @@ def education_node(state: MatchingState):
         prompt_text = education_prompt.format(jd_text=jd_text, cv_text=cv_text)
     except Exception as e:
         print("[ai_matching] education_prompt.format() failed:", e)
-        prompt_text = education_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(education_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
 
     response_str = call_gemini_api(prompt_text, category="education")
     parsed = _safe_parse_response(response_str, "education")
@@ -401,10 +458,9 @@ def education_node(state: MatchingState):
     state["results"] = current_results
     return {"results": current_results}
 
-
 def projects_node(state: MatchingState):
     print("--- Running Projects Node ---")
-    cv_text = state.get("cv_text", "") or ""
+    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
     if len(cv_text) > 12000:
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
@@ -413,7 +469,7 @@ def projects_node(state: MatchingState):
         prompt_text = projects_prompt.format(jd_text=jd_text, cv_text=cv_text)
     except Exception as e:
         print("[ai_matching] projects_prompt.format() failed:", e)
-        prompt_text = projects_prompt.template.format(jd_text=jd_text[:2000], cv_text=cv_text[:2000]) if hasattr(projects_prompt, "template") else f"Job: {jd_text}\nCV: {cv_text[:2000]}"
+        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
 
     response_str = call_gemini_api(prompt_text, category="projects")
     parsed = _safe_parse_response(response_str, "projects")
@@ -429,60 +485,59 @@ def projects_node(state: MatchingState):
     state["results"] = current_results
     return {"results": current_results}
 
-
+# -----------------------------
+# Aggregate node
+# -----------------------------
 def aggregate_node(state: MatchingState):
-    """
-    Aggregates scores and formats the final output with the
-    nested structure expected by the frontend.
-    """
     print("--- Running Aggregate Node ---")
-    results = state.get("results", {})
-    
-    scores = {
-        "skills": results.get("skills", {}).get("skills_score", 0),
-        "experience": results.get("experience", {}).get("experience_score", 0),
-        "education": results.get("education", {}).get("education_score", 0),
-        "projects": results.get("projects", {}).get("projects_score", 0),
-    }
-    
-    weights = {"skills": 0.3, "experience": 0.4, "education": 0.1, "projects": 0.2}
-    overall_score = round(sum(scores[cat] * weights[cat] for cat in scores), 1)
+    results = state.get("results", {}) or {}
 
-    # Build the nested dictionary that the JavaScript expects.
+    def safe_score(obj, key, fallback=0):
+        try:
+            val = obj.get(key, fallback)
+            if isinstance(val, (int, float)):
+                return val
+            if isinstance(val, str) and val.replace('.', '', 1).isdigit():
+                return float(val) if '.' in val else int(val)
+            return fallback
+        except Exception:
+            return fallback
+
+    scores = {
+        "skills": safe_score(results.get("skills", {}), "skills_score", 0),
+        "experience": safe_score(results.get("experience", {}), "experience_score", 0),
+        "education": safe_score(results.get("education", {}), "education_score", 0),
+        "projects": safe_score(results.get("projects", {}), "projects_score", 0),
+    }
+
+    weights = {"skills": 0.3, "experience": 0.4, "education": 0.1, "projects": 0.2}
+    overall_score = round(sum(scores[k] * weights.get(k, 0) for k in scores), 1)
+
     final_output = {
         "overall_score": overall_score,
         "details": {
-            "skills": {
-                "score": scores["skills"],
-                "explanation": results.get("skills", {}).get("explanation", "N/A")
-            },
-            "experience": {
-                "score": scores["experience"],
-                "explanation": results.get("experience", {}).get("explanation", "N/A")
-            },
-            "education": {
-                "score": scores["education"],
-                "explanation": results.get("education", {}).get("explanation", "N/A")
-            },
-            "projects": {
-                "score": scores["projects"],
-                "explanation": results.get("projects", {}).get("explanation", "N/A")
-            }
+            "skills": {"score": scores["skills"], "explanation": results.get("skills", {}).get("explanation", "") or ""},
+            "experience": {"score": scores["experience"], "explanation": results.get("experience", {}).get("explanation", "") or ""},
+            "education": {"score": scores["education"], "explanation": results.get("education", {}).get("explanation", "") or ""},
+            "projects": {"score": scores["projects"], "explanation": results.get("projects", {}).get("explanation", "") or ""}
         }
     }
     return {"final_output": final_output}
 
+# -----------------------------
 # Graph setup
+# -----------------------------
 def setup_graph():
     workflow = StateGraph(MatchingState)
+    workflow.add_node("summarize", summarize_cv_node)
     workflow.add_node("skills", skills_node)
     workflow.add_node("experience", experience_node)
     workflow.add_node("education", education_node)
     workflow.add_node("projects", projects_node)
     workflow.add_node("aggregate", aggregate_node)
 
-    # Correct sequential workflow
-    workflow.set_entry_point("skills")
+    workflow.set_entry_point("summarize")
+    workflow.add_edge("summarize", "skills")
     workflow.add_edge("skills", "experience")
     workflow.add_edge("experience", "education")
     workflow.add_edge("education", "projects")
