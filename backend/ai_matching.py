@@ -13,7 +13,7 @@ from typing import TypedDict
 # -----------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 USE_MOCK_GEMINI = os.getenv("USE_MOCK_GEMINI", "false").lower() in ("1", "true", "yes")
-API_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
 # -----------------------------
 # PROMPTS (unchanged, using your original templates)
