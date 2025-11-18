@@ -274,6 +274,22 @@ def _safe_parse_response(response_str: str, category_key: str):
     # fallback
     return {f"{category_key}_score": 0, "explanation": "Invalid JSON from Gemini API or API error.", "raw": (response_str or "")[:1000]}
 
+def safe_format_template(template_text: str, **kwargs) -> str:
+    """
+    Try .format(**kwargs) (fast). If it fails (KeyError or other), do a safe
+    literal replacement of placeholders like {jd_text} and {cv_text}.
+    This avoids crashes when template contains other braces or JSON examples.
+    """
+    if not isinstance(template_text, str):
+        template_text = str(template_text)
+    try:
+        return template_text.format(**kwargs)
+    except Exception as e:
+        # fallback: literal replace each key, avoid touching other braces
+        t = template_text
+        for k, v in kwargs.items():
+            t = t.replace("{" + k + "}", str(v))
+        return t
 # -----------------------------
 # Summarization node
 # -----------------------------
@@ -284,7 +300,7 @@ def summarize_cv_node(state: MatchingState):
     if len(cv_text) > 25000:
         cv_text = cv_text[:25000]
 
-    summary_prompt = f"""
+    summary_template = """
 You are an expert HR assistant. Summarize the CV into a compact structured summary (max 3000 characters).
 
 Extract ONLY:
@@ -295,9 +311,11 @@ Extract ONLY:
 - Specific port/terminal/IWT related experience sections (if present)
 
 Return plain text summary only, no JSON. Keep it concise.
+
 CV:
 {cv_text}
 """
+    summary_prompt = safe_format_template(summary_template, cv_text=cv_text[:25000])
     response = call_gemini_api(summary_prompt, category="summary")
     # call_gemini_api tries to return JSON strings for some categories; ensure we keep plain text summary
     # If we received a JSON object, extract readable text or join fields; otherwise use returned text
@@ -328,11 +346,8 @@ def skills_node(state: MatchingState):
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
 
-    try:
-        prompt_text = skills_prompt.format(jd_text=jd_text, cv_text=cv_text)
-    except Exception as e:
-        print("[ai_matching] skills_prompt.format() failed:", e)
-        prompt_text = getattr(skills_prompt, "template", "Job: {jd_text}\nCV: {cv_text}").format(jd_text=jd_text[:2000], cv_text=cv_text[:2000])
+    template_text = getattr(skills_prompt, "template", str(skills_prompt))
+    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
 
     response_str = call_gemini_api(prompt_text, category="skills")
     parsed = _safe_parse_response(response_str, "skills")
@@ -355,11 +370,9 @@ def experience_node(state: MatchingState):
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
 
-    try:
-        prompt_text = experience_prompt.format(jd_text=jd_text, cv_text=cv_text)
-    except Exception as e:
-        print("[ai_matching] experience_prompt.format() failed:", e)
-        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
+    template_text = getattr(experience_prompt, "template", str(experience_prompt))
+    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
+
 
     response_str = call_gemini_api(prompt_text, category="experience")
     parsed = _safe_parse_response(response_str, "experience")
@@ -382,11 +395,9 @@ def education_node(state: MatchingState):
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
 
-    try:
-        prompt_text = education_prompt.format(jd_text=jd_text, cv_text=cv_text)
-    except Exception as e:
-        print("[ai_matching] education_prompt.format() failed:", e)
-        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
+    template_text = getattr(education_prompt, "template", str(education_prompt))
+    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
+
 
     response_str = call_gemini_api(prompt_text, category="education")
     parsed = _safe_parse_response(response_str, "education")
@@ -409,11 +420,9 @@ def projects_node(state: MatchingState):
         cv_text = cv_text[:12000]
     jd_text = state.get("jd_text", "") or ""
 
-    try:
-        prompt_text = projects_prompt.format(jd_text=jd_text, cv_text=cv_text)
-    except Exception as e:
-        print("[ai_matching] projects_prompt.format() failed:", e)
-        prompt_text = f"Job: {jd_text[:2000]}\nCV: {cv_text[:2000]}"
+    template_text = getattr(projects_prompt, "template", str(projects_prompt))
+    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
+
 
     response_str = call_gemini_api(prompt_text, category="projects")
     parsed = _safe_parse_response(response_str, "projects")
