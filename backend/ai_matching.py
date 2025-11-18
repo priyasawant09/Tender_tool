@@ -31,28 +31,28 @@ Candidate CV (or concise summary):
 OUTPUT FORMAT (required)
 Return EXACTLY one valid JSON object and nothing else. No explanation, no markdown, no code fences, no additional fields. The JSON must include the following keys:
 
-{
-  "skills": {"score": int (1-10), "explanation": string, "evidence": [string, ...]},
-  "experience": {"score": int (1-10), "explanation": string, "years": number or null},
-  "education": {"score": int (1-10), "explanation": string, "degree": string or null},
-  "projects": {"score": int (1-10), "explanation": string, "top_project": string or null}
-}
+{{
+  "skills": {{"score": int (1-10), "explanation": string, "evidence": [string, ...]}},
+  "experience": {{"score": int (1-10), "explanation": string, "years": number or null}},
+  "education": {{"score": int (1-10), "explanation": string, "degree": string or null}},
+  "projects": {{"score": int (1-10), "explanation": string, "top_project": string or null}}
+}}
 
 SCORING RULES (strict)
 - All scores must be integers between 1 and 10 inclusive.
-- Use 9–10 only when the CV strongly and directly meets or exceeds the JD requirements.
-- Use 7–8 for a good match with minor gaps; 4–6 for partial match; 1–3 for poor or no match.
+- Use 9-10 only when the CV strongly and directly meets or exceeds the JD requirements.
+- Use 7-8 for a good match with minor gaps; 4-6 for partial match; 1-3 for poor or no match.
 - If a value is unknown/unavailable, use `null` for that field (not an empty string), but still provide an explanation and set score appropriately.
 
 WHAT TO INCLUDE IN EACH FIELD
-- skills.explanation — 1–2 concise sentences summarizing why the score was chosen.
-- skills.evidence — an array (2–4 short strings) quoting exact phrases or short fragments from the CV that justify the score. If no direct phrases, provide the most relevant paraphrase.
+- skills.explanation — 1-2 concise sentences summarizing why the score was chosen.
+- skills.evidence — an array (2-4 short strings) quoting exact phrases or short fragments from the CV that justify the score. If no direct phrases, provide the most relevant paraphrase.
 - experience.years — numeric total years of relevant experience if you can infer it, else null.
-- experience.explanation — 1–2 sentences comparing years & roles to the JD requirements.
+- experience.explanation — 1-2 sentences comparing years & roles to the JD requirements.
 - education.degree — short string (e.g., "B.Tech Computer Science") if present in CV, else null.
 - education.explanation — 1 sentence that explains match/mismatch to JD degree requirement.
 - projects.top_project — name/title/short description of the most relevant project in CV, else null.
-- projects.explanation — 1–2 sentences describing how the top project demonstrates relevant skills.
+- projects.explanation — 1-2 sentences describing how the top project demonstrates relevant skills.
 
 GUIDELINES FOR EVIDENCE EXTRACTION
 - Prefer direct text from the CV: exact phrases or job titles, e.g., "Senior Data Engineer", "3 years", "AWS, Python".
@@ -71,12 +71,12 @@ ROBUSTNESS RULES
 - Ensure arrays (evidence) contain at least one string when evidence exists, otherwise an empty array [].
 
 EXAMPLE (valid output)
-{
+{{
   "skills": {"score":8, "explanation":"Strong Python and SQL evidence; missing cloud infra.", "evidence":["Python (5+ yrs)","SQL, Postgres"]},
   "experience": {"score":7, "explanation":"5 years in relevant roles, slightly junior to Senior requirement.", "years":5},
   "education": {"score":9, "explanation":"B.Tech in Computer Science matches requirement.", "degree":"B.Tech Computer Science"},
   "projects": {"score":7, "explanation":"Relevant ETL project demonstrating data pipeline skills.", "top_project":"ETL pipeline for payments reconciliation"}
-}
+}}
 
 IMPORTANT: Output must be parsable by a machine. Produce exactly the JSON structure above and nothing else.
 """)
@@ -145,7 +145,7 @@ def summarize_text_simple(text, head_chars=3000, tail_chars=800):
     return text[:head_chars] + "\n\n...[truncated]...\n\n" + text[-tail_chars:]
 
 # -----------------------------
-# Robust Gemini Caller (with retries/backoff + RetryInfo handling)
+#  Gemini Caller (with retries/backoff + RetryInfo handling)
 # -----------------------------
 def call_gemini_api(prompt_text: str, category: str = "generic", max_retries: int = 4, timeout=(5,25)) -> str:
     """
@@ -236,6 +236,25 @@ def call_gemini_api(prompt_text: str, category: str = "generic", max_retries: in
 
     # Exhausted retries
     return json.dumps({"score": 0, "explanation": "API Error: retries exhausted / quota exceeded"})
+# -----------------------------
+# Helpers: safe parsing wrapper
+# -----------------------------
+def safe_format_template(template_text: str, **kwargs) -> str:
+    """
+    Try .format(**kwargs) (fast). If it fails (KeyError or other), do a safe
+    literal replacement of placeholders like {jd_text} and {cv_text}.
+    This avoids crashes when template contains other braces or JSON examples.
+    """
+    if not isinstance(template_text, str):
+        template_text = str(template_text)
+    try:
+        return template_text.format(**kwargs)
+    except Exception as e:
+        # fallback: literal replace each key, avoid touching other braces
+        t = template_text
+        for k, v in kwargs.items():
+            t = t.replace("{" + k + "}", str(v))
+        return t
 
 # -----------------------------
 # Summarization node
@@ -283,15 +302,15 @@ CV:
 def combined_scoring_node(state: MatchingState):
     print("--- Running Combined Scoring Node ---")
     jd_text = (state.get("jd_text") or "")[:2000]
-    # Prefer the pre-computed summary if present (smaller prompt)
     cv_text = state.get("cv_summary") or state.get("cv_text") or ""
-    # Truncate for prompt size
     cv_short = summarize_text_simple(cv_text, head_chars=3000, tail_chars=800)
 
-    prompt_text = combined_prompt.format(jd_text=jd_text, cv_text=cv_short)
+    # Use safe formatter (prevents KeyError from stray braces)
+    template_text = getattr(combined_prompt, "template", str(combined_prompt))
+    prompt_text = safe_format_template(template_text, jd_text=jd_text, cv_text=cv_short)
 
-    # One call per CV
-    response_str = call_gemini_api(prompt_text, category="combined")
+    # One call per CV — increase timeout to allow model to respond for larger prompts
+    response_str = call_gemini_api(prompt_text, category="combined", max_retries=4, timeout=(5,60))
 
     # Try to extract valid JSON
     parsed = None
@@ -309,21 +328,18 @@ def combined_scoring_node(state: MatchingState):
             "projects": {"projects_score": 0, "explanation": "Invalid or missing JSON from model."},
         }}
 
-    # Normalize parsed structure: accept either { "skills": {"score":..}} or {"skills_score":..}
+    # Normalize parsed structure
     def normalize_section(sec_name, parsed_obj):
         sec = parsed_obj.get(sec_name, {}) or {}
-        # if top-level had "skills_score" style
         score_key_alt = f"{sec_name}_score"
         if isinstance(parsed_obj.get(score_key_alt), (int, float, str)):
             score_val = parsed_obj.get(score_key_alt)
             explanation_val = parsed_obj.get("explanation", "") or ""
             return {f"{sec_name}_score": float(score_val), "explanation": explanation_val}
-        # if sec is a dict with keys 'score' and 'explanation'
         if isinstance(sec, dict):
             s = sec.get("score", sec.get(f"{sec_name}_score", 0))
-            e = sec.get("explanation", "")
+            e = sec.get("explanation", "") or sec.get("explain", "")
             return {f"{sec_name}_score": float(s) if isinstance(s, (int, float, str)) and str(s).replace('.', '', 1).isdigit() else 0, "explanation": e}
-        # fallback
         return {f"{sec_name}_score": 0, "explanation": ""}
 
     skills_parsed = normalize_section("skills", parsed)
@@ -339,6 +355,7 @@ def combined_scoring_node(state: MatchingState):
     }
 
     return {"results": current_results}
+
 
 # -----------------------------
 # Aggregate node (unchanged)

@@ -195,7 +195,7 @@ def match_cvs():
                         "final_output": {}
                     }
 
-                    final_state = invoke_graph_with_timeout(ai_graph_app, initial_state, timeout=60)
+                    final_state = invoke_graph_with_timeout(ai_graph_app, initial_state, timeout=120)
 
                     if final_state is None:
                         results.append({
