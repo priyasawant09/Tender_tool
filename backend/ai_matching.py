@@ -16,136 +16,71 @@ USE_MOCK_GEMINI = os.getenv("USE_MOCK_GEMINI", "false").lower() in ("1", "true",
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
 # -----------------------------
-# PROMPTS (unchanged, using your original templates)
+# Combined Prompt (one call per CV)
 # -----------------------------
-skills_prompt = PromptTemplate.from_template("""
-You are a meticulous AI Recruitment Analyst. Your goal is to objectively score a candidate's technical skills against a job description.
+combined_prompt = PromptTemplate.from_template("""
+You are an objective, precise recruitment scoring assistant. Your job is to read a JOB DESCRIPTION and a CANDIDATE CV (or concise summary) and return a single, machine-parseable JSON object that scores the candidate on four dimensions: skills, experience, education, and projects.
 
-**Job Description:**
+INPUTS
+Job Description:
 ```{jd_text}```
 
-**Candidate's CV:**
+Candidate CV (or concise summary):
 ```{cv_text}```
 
-**Analysis Steps:**
-1.  From the Job Description, identify the 4-6 most critical technical skills, programming languages, and tools required. These are the 'core requirements'.
-2.  Meticulously scan the CV to find direct evidence for each of the core requirements.
-3.  Based on the scoring rubric below, assign a score.
-4.  Write a concise explanation justifying your score, explicitly mentioning 2-3 key skills the candidate possesses and any critical skills that are missing.
-5.  The explanation should clearly list strengths and gaps using bullet points.
-                                             
-**Scoring Rubric:**
-- **9-10 (Excellent Match):** Candidate demonstrates strong evidence for all core requirements.
-- **7-8 (Good Match):** Candidate meets most of the core requirements.
-- **4-6 (Fair Match):** Candidate meets some requirements but has significant gaps.
-- **1-3 (Poor Match):** Candidate is missing most or all of the core requirements.
+OUTPUT FORMAT (required)
+Return EXACTLY one valid JSON object and nothing else. No explanation, no markdown, no code fences, no additional fields. The JSON must include the following keys:
 
-**Output Format:**
-Your final response MUST BE a single, clean JSON object and nothing else. Do not add any text or markdown before or after it.
+{
+  "skills": {"score": int (1-10), "explanation": string, "evidence": [string, ...]},
+  "experience": {"score": int (1-10), "explanation": string, "years": number or null},
+  "education": {"score": int (1-10), "explanation": string, "degree": string or null},
+  "projects": {"score": int (1-10), "explanation": string, "top_project": string or null}
+}
 
-**Example Output:**
-{{"skills_score": 8, "explanation": "Strengths: Strong evidence for Python and SQL as required. Gaps: Missing experience with AWS."}}
+SCORING RULES (strict)
+- All scores must be integers between 1 and 10 inclusive.
+- Use 9–10 only when the CV strongly and directly meets or exceeds the JD requirements.
+- Use 7–8 for a good match with minor gaps; 4–6 for partial match; 1–3 for poor or no match.
+- If a value is unknown/unavailable, use `null` for that field (not an empty string), but still provide an explanation and set score appropriately.
 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
-                                                                                          
+WHAT TO INCLUDE IN EACH FIELD
+- skills.explanation — 1–2 concise sentences summarizing why the score was chosen.
+- skills.evidence — an array (2–4 short strings) quoting exact phrases or short fragments from the CV that justify the score. If no direct phrases, provide the most relevant paraphrase.
+- experience.years — numeric total years of relevant experience if you can infer it, else null.
+- experience.explanation — 1–2 sentences comparing years & roles to the JD requirements.
+- education.degree — short string (e.g., "B.Tech Computer Science") if present in CV, else null.
+- education.explanation — 1 sentence that explains match/mismatch to JD degree requirement.
+- projects.top_project — name/title/short description of the most relevant project in CV, else null.
+- projects.explanation — 1–2 sentences describing how the top project demonstrates relevant skills.
+
+GUIDELINES FOR EVIDENCE EXTRACTION
+- Prefer direct text from the CV: exact phrases or job titles, e.g., "Senior Data Engineer", "3 years", "AWS, Python".
+- If quoting, keep quotes short (<= 10 words) and exact.
+- If you infer (e.g., calculating years), explain the inference in explanation and set `years` accordingly.
+
+PRIORITIZATION
+- If the JD lists specific *required* skills, those should be weighted heavily when scoring skills.
+- If JD uses vague words like "experience with cloud", treat them as lower-precision requirements — call out the ambiguity in the explanation.
+
+ROBUSTNESS RULES
+- If you cannot produce valid JSON, return exactly: {"error":"no_json_found"}
+- Do not include any additional keys in the top-level JSON.
+- Keep explanations concise (max 25 words each).
+- Ensure all numeric scores are integers (round or floor floats to nearest integer).
+- Ensure arrays (evidence) contain at least one string when evidence exists, otherwise an empty array [].
+
+EXAMPLE (valid output)
+{
+  "skills": {"score":8, "explanation":"Strong Python and SQL evidence; missing cloud infra.", "evidence":["Python (5+ yrs)","SQL, Postgres"]},
+  "experience": {"score":7, "explanation":"5 years in relevant roles, slightly junior to Senior requirement.", "years":5},
+  "education": {"score":9, "explanation":"B.Tech in Computer Science matches requirement.", "degree":"B.Tech Computer Science"},
+  "projects": {"score":7, "explanation":"Relevant ETL project demonstrating data pipeline skills.", "top_project":"ETL pipeline for payments reconciliation"}
+}
+
+IMPORTANT: Output must be parsable by a machine. Produce exactly the JSON structure above and nothing else.
 """)
 
-experience_prompt = PromptTemplate.from_template("""
-You are a meticulous AI Recruitment Analyst. Your goal is to objectively score a candidate's professional experience against a job description.
-
-**Job Description:**
-```{jd_text}```
-
-**Candidate's CV:**
-```{cv_text}```
-
-**Analysis Steps:**
-1.  From the Job Description, determine the required years of experience (e.g., "5+ years") and the expected seniority or role type (e.g., "Senior Software Engineer").
-2.  From the CV, calculate the candidate's total years of relevant professional experience and check if their job titles align with the required seniority.
-3.  Based on the scoring rubric below, assign a score.
-4.  Write a concise explanation justifying your score, directly comparing the candidate's years of experience and role relevance to what the job requires.
-5.  The explanation should clearly list strengths and gaps using bullet points.
-
-**Scoring Rubric:**
-- **9-10 (Excellent Match):** Experience level and role relevance meet or exceed all requirements.
-- **7-8 (Good Match):** Experience level is close to the requirement, and roles are highly relevant.
-- **4-6 (Fair Match):** Experience is significantly less than required OR roles are not fully relevant.
-- **1-3 (Poor Match):** Lacks relevant professional experience.
-
-**Output Format:**
-Your final response MUST BE a single, clean JSON object and nothing else. Do not add any text or markdown before or after it.
-
-**Example Output:**
-{{"experience_score": 6, "explanation": "Strengths: Roles in software development are relevant. Gaps: Candidate has 3 years of experience, while the JD requires 5+ years."}}
-                                                 
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
-
-""")
-
-education_prompt = PromptTemplate.from_template("""
-You are a meticulous AI Recruitment Analyst. Your goal is to objectively score a candidate's educational background against a job description.
-
-**Job Description:**
-```{jd_text}```
-
-**Candidate's CV:**
-```{cv_text}```
-
-**Analysis Steps:**
-1.  From the Job Description, identify any specific degree requirements (e.g., "Bachelor's in Computer Science").
-2.  If no specific education is required, your default score should be 10.
-3.  Scan the CV for the required academic qualifications.
-4.  Based on the scoring rubric below, assign a score.
-5.  Write a concise explanation justifying your score.
-6.  The explanation should clearly list strengths and gaps using bullet points.
-
-**Scoring Rubric:**
-- **9-10 (Excellent Match):** Perfectly matches or exceeds the educational requirements, or no specific education is required.
-- **7-8 (Good Match):** Degree is in a related field but not the exact one specified.
-- **4-6 (Fair Match):** Possesses a degree, but not at the level or in the field required.
-- **1-3 (Poor Match):** Does not meet the minimum educational requirements.
-
-**Output Format:**
-Your final response MUST BE a single, clean JSON object and nothing else. Do not add any text or markdown before or after it.
-
-**Example Output:**
-{{"education_score": 9, "explanation": "Candidate holds a B.Tech in Computer Science, which matches the job requirement."}}
-
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
-
-    """)
-
-projects_prompt = PromptTemplate.from_template("""
-You are a meticulous AI Recruitment Analyst. Your goal is to evaluate how a candidate's project work demonstrates practical application of the skills required for a job.
-
-**Job Description:**
-```{jd_text}```
-
-**Candidate's CV:**
-```{cv_text}```
-
-**Analysis Steps:**
-1.  From the Job Description, infer the key practical skills that projects/assignments could demonstrate (e.g., building web apps, data analysis).
-2.  Scan the CV for a "Projects" or "Assignments" section. If no projects/assignments are listed, assign a low score (1-3).
-3.  Evaluate the listed projects/assignments for their relevance to the job's practical requirements.
-4.  Based on the scoring rubric below, assign a score.
-5.  Write a concise explanation justifying your score, mentioning a specific project if it is highly relevant.
-6.  The explanation should clearly list strengths and gaps using bullet points.
-
-**Scoring Rubric:**
-- **9-10 (Excellent Match):** Projects/assignments are highly relevant and provide strong, direct evidence of the candidate's ability to perform the job.
-- **7-8 (Good Match):** Projects/assignments are relevant and demonstrate some of the key skills required.
-- **4-6 (Fair Match):** Projects/assignments are present but have low relevance to the job's requirements.
-- **1-3 (Poor Match):** No projects/assignments are listed, or they are completely irrelevant.
-
-**Output Format:**
-Your final response MUST BE a single, clean JSON object and nothing else. Do not add any text or markdown before or after it.
-
-**Example Output:**
-{{"projects_score": 10, "explanation": "Strengths: The 'AI-based CV Matching Tool' project is extremely relevant and demonstrates direct, hands-on experience for this role."}}
-
-IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No markdown, no backticks, no explanation. If you cannot produce valid JSON, reply exactly: {"error":"no_json_found"}.
- """)
 
 # -----------------------------
 # State
@@ -153,11 +88,12 @@ IMPORTANT: Respond with ONLY a single valid JSON object and nothing else. No mar
 class MatchingState(TypedDict):
     jd_text: str
     cv_text: str
+    cv_summary: str
     results: dict
     final_output: dict
 
 # -----------------------------
-# Helpers
+# Utilities: JSON extraction & truncation
 # -----------------------------
 def extract_json_object_from_text(text: str):
     """
@@ -168,7 +104,7 @@ def extract_json_object_from_text(text: str):
         return None
 
     s = text.strip()
-    # strip code fences
+    # strip common code fences
     s = re.sub(r"^```(?:json)?\s*", "", s)
     s = re.sub(r"\s*```$", "", s)
 
@@ -192,6 +128,7 @@ def extract_json_object_from_text(text: str):
                     cand = s[start:i+1]
                     try:
                         parsed = json.loads(cand)
+                        # prefer larger candidate (more likely complete)
                         if not best or len(cand) > len(best[0]):
                             best = (cand, parsed)
                     except Exception:
@@ -199,17 +136,23 @@ def extract_json_object_from_text(text: str):
                     break
     return best[1] if best else None
 
-# -----------------------------
-# Robust Gemini Caller
-# -----------------------------
-def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
-    """
-    Call Gemini with the *minimal valid* request shape that works:
-      { "contents": [ { "parts": [ { "text": "..." } ] } ] }
+def summarize_text_simple(text, head_chars=3000, tail_chars=800):
+    """Keep the beginning and the end of the CV to preserve both overview and recent details."""
+    if not text:
+        return ""
+    if len(text) <= head_chars + tail_chars:
+        return text
+    return text[:head_chars] + "\n\n...[truncated]...\n\n" + text[-tail_chars:]
 
-    Returns the model text (unparsed). On error, returns a JSON string describing the error
-    so downstream parsing won't crash.
+# -----------------------------
+# Robust Gemini Caller (with retries/backoff + RetryInfo handling)
+# -----------------------------
+def call_gemini_api(prompt_text: str, category: str = "generic", max_retries: int = 4, timeout=(5,25)) -> str:
     """
+    Calls Gemini API and returns raw model text. On failure returns a JSON string describing the error.
+    Implements retries on 429 with backoff using RetryInfo if present.
+    """
+    # Mock fallback
     if USE_MOCK_GEMINI or not GEMINI_API_KEY:
         mock = {
             "skills": json.dumps({"skills_score": 8, "explanation": "Mock: Python and SQL found."}),
@@ -223,83 +166,85 @@ def call_gemini_api(prompt_text: str, category: str = "generic") -> str:
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
     headers = {"Content-Type": "application/json"}
 
-    try:
-        resp = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-    except requests.Timeout:
-        print(f"[ai_matching] Gemini timeout for '{category}'")
-        return json.dumps({"score": 0, "explanation": "Gemini timeout"})
-    except requests.RequestException as e:
-        print(f"[ai_matching] Gemini request exception for '{category}': {e}")
-        return json.dumps({"score": 0, "explanation": f"Gemini request exception: {str(e)[:200]}"})
+    attempt = 0
+    while attempt <= max_retries:
+        try:
+            resp = requests.post(API_URL, headers=headers, json=payload, timeout=timeout)
+        except requests.Timeout as e:
+            print(f"[ai_matching] Gemini timeout for '{category}' attempt {attempt}: {e}")
+            wait_s = (2 ** attempt) + 0.1
+            time.sleep(wait_s)
+            attempt += 1
+            continue
+        except requests.RequestException as e:
+            print(f"[ai_matching] Gemini request exception for '{category}' attempt {attempt}: {e}")
+            wait_s = (2 ** attempt) + 0.1
+            time.sleep(wait_s)
+            attempt += 1
+            continue
 
-    # Non-200 -> return safe JSON string with snippet
-    if resp.status_code != 200:
-        body = resp.text[:2000]
-        print(f"[ai_matching] Gemini non-200: {resp.status_code} Body (truncated):")
-        print(body)
-        return json.dumps({"score": 0, "explanation": f"Gemini non-200:{resp.status_code}", "raw": body[:1000]})
+        if resp.status_code == 200:
+            try:
+                resp_json = resp.json()
+                text = resp_json["candidates"][0]["content"]["parts"][0]["text"]
+                return text.strip()
+            except Exception as e:
+                print("[ai_matching] Failed to parse Gemini success JSON:", e)
+                return json.dumps({"score": 0, "explanation": "Gemini returned unexpected structure", "raw": resp.text[:1000]})
 
-    # Try to extract text candidate
-    try:
-        resp_json = resp.json()
-        text = resp_json["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        print("[ai_matching] Failed to parse Gemini JSON:", e)
-        print("Raw response (truncated):", resp.text[:2000])
-        return json.dumps({"score": 0, "explanation": "Gemini returned unexpected structure", "raw": resp.text[:1000]})
+        # Non-200 handling
+        body = resp.text
+        print(f"[ai_matching] Gemini non-200 ({resp.status_code}) Body (truncated): {body[:1000]}")
 
-    # return the raw model text (caller will attempt to extract JSON from it)
-    return text.strip()
+        if resp.status_code == 429:
+            # Try to get retry delay from JSON details (RetryInfo) or Retry-After header
+            retry_seconds = None
+            try:
+                j = resp.json()
+                if "error" in j and "details" in j["error"]:
+                    for d in j["error"]["details"]:
+                        if d.get("@type", "").endswith("RetryInfo"):
+                            rd = d.get("retryDelay")
+                            if rd:
+                                s = str(rd)
+                                if s.endswith("s"):
+                                    retry_seconds = float(s[:-1])
+                                else:
+                                    retry_seconds = float(s)
+                                break
+            except Exception:
+                pass
 
+            if retry_seconds is None:
+                ra = resp.headers.get("Retry-After")
+                try:
+                    if ra:
+                        retry_seconds = float(ra)
+                except Exception:
+                    retry_seconds = None
 
-# -----------------------------
-# Helpers: safe parsing wrapper
-# -----------------------------
-def _safe_parse_response(response_str: str, category_key: str):
-    # Try direct JSON
-    try:
-        parsed = json.loads(response_str)
-        return parsed
-    except Exception:
-        pass
+            if retry_seconds is None:
+                retry_seconds = (2 ** attempt) + 0.2
 
-    # Try extract JSON object from noisy text
-    try:
-        parsed = extract_json_object_from_text(response_str)
-        if isinstance(parsed, dict):
-            return parsed
-    except Exception:
-        pass
+            print(f"[ai_matching] 429 received, retrying in {retry_seconds:.2f}s (attempt {attempt}/{max_retries})")
+            time.sleep(retry_seconds)
+            attempt += 1
+            continue
+        else:
+            # Other 4xx/5xx: do not retry indefinitely
+            return json.dumps({"score": 0, "explanation": f"Gemini non-200:{resp.status_code}", "raw": body[:1000]})
 
-    # fallback
-    return {f"{category_key}_score": 0, "explanation": "Invalid JSON from Gemini API or API error.", "raw": (response_str or "")[:1000]}
+    # Exhausted retries
+    return json.dumps({"score": 0, "explanation": "API Error: retries exhausted / quota exceeded"})
 
-def safe_format_template(template_text: str, **kwargs) -> str:
-    """
-    Try .format(**kwargs) (fast). If it fails (KeyError or other), do a safe
-    literal replacement of placeholders like {jd_text} and {cv_text}.
-    This avoids crashes when template contains other braces or JSON examples.
-    """
-    if not isinstance(template_text, str):
-        template_text = str(template_text)
-    try:
-        return template_text.format(**kwargs)
-    except Exception as e:
-        # fallback: literal replace each key, avoid touching other braces
-        t = template_text
-        for k, v in kwargs.items():
-            t = t.replace("{" + k + "}", str(v))
-        return t
 # -----------------------------
 # Summarization node
 # -----------------------------
 def summarize_cv_node(state: MatchingState):
     print("--- Running Summarization Node ---")
     cv_text = state.get("cv_text", "") or ""
-    # limit pre-summarize size to avoid huge prompt in the summary step
-    if len(cv_text) > 25000:
-        cv_text = cv_text[:25000]
-
+    # Keep summarization prompt bounded to avoid huge model input
+    cv_text_for_summary = cv_text[:25000]
     summary_template = """
 You are an expert HR assistant. Summarize the CV into a compact structured summary (max 3000 characters).
 
@@ -308,22 +253,19 @@ Extract ONLY:
 - Total years of experience and key roles
 - Education (degrees)
 - Major relevant projects
-- Specific port/terminal/IWT related experience sections (if present)
+- Industry-specific experience (if present)
 
 Return plain text summary only, no JSON. Keep it concise.
 
 CV:
 {cv_text}
 """
-    summary_prompt = safe_format_template(summary_template, cv_text=cv_text[:25000])
-    response = call_gemini_api(summary_prompt, category="summary")
-    # call_gemini_api tries to return JSON strings for some categories; ensure we keep plain text summary
-    # If we received a JSON object, extract readable text or join fields; otherwise use returned text
+    prompt = summary_template.format(cv_text=cv_text_for_summary)
+    resp = call_gemini_api(prompt, category="summary")
+    # If the model returned JSON or long text, fallback to plain text extraction
     try:
-        parsed = json.loads(response)
-        # If summary returned as object, create a readable text summary
+        parsed = json.loads(resp)
         if isinstance(parsed, dict):
-            # join key: value pairs into short summary string
             parts = []
             for k, v in parsed.items():
                 parts.append(f"{k}: {v}")
@@ -331,115 +273,75 @@ CV:
         else:
             summary_text = str(parsed)[:4000]
     except Exception:
-        summary_text = str(response)[:4000]
+        summary_text = str(resp)[:4000]
 
-    # store summary in state for downstream nodes
     return {"cv_summary": summary_text}
 
 # -----------------------------
-# Node functions (use summary fallback)
+# Combined scoring node (single call per CV)
 # -----------------------------
-def skills_node(state: MatchingState):
-    print("--- Running Skills Node ---")
+def combined_scoring_node(state: MatchingState):
+    print("--- Running Combined Scoring Node ---")
+    jd_text = (state.get("jd_text") or "")[:2000]
+    # Prefer the pre-computed summary if present (smaller prompt)
     cv_text = state.get("cv_summary") or state.get("cv_text") or ""
-    if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]
-    jd_text = state.get("jd_text", "") or ""
+    # Truncate for prompt size
+    cv_short = summarize_text_simple(cv_text, head_chars=3000, tail_chars=800)
 
-    template_text = getattr(skills_prompt, "template", str(skills_prompt))
-    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
+    prompt_text = combined_prompt.format(jd_text=jd_text, cv_text=cv_short)
 
-    response_str = call_gemini_api(prompt_text, category="skills")
-    parsed = _safe_parse_response(response_str, "skills")
+    # One call per CV
+    response_str = call_gemini_api(prompt_text, category="combined")
 
-    if isinstance(parsed, dict):
-        parsed.setdefault("skills_score", parsed.get("score", 0))
-        parsed.setdefault("explanation", parsed.get("explanation", ""))
-    else:
-        parsed = {"skills_score": 0, "explanation": "Unexpected response type from Gemini."}
+    # Try to extract valid JSON
+    parsed = None
+    try:
+        parsed = json.loads(response_str)
+    except Exception:
+        parsed = extract_json_object_from_text(response_str)
 
-    current_results = state.get("results", {}) or {}
-    current_results["skills"] = parsed
-    state["results"] = current_results
-    return {"results": current_results}
+    if not parsed or not isinstance(parsed, dict):
+        # fallback safe structure
+        return {"results": {
+            "skills": {"skills_score": 0, "explanation": "Invalid or missing JSON from model."},
+            "experience": {"experience_score": 0, "explanation": "Invalid or missing JSON from model."},
+            "education": {"education_score": 0, "explanation": "Invalid or missing JSON from model."},
+            "projects": {"projects_score": 0, "explanation": "Invalid or missing JSON from model."},
+        }}
 
-def experience_node(state: MatchingState):
-    print("--- Running Experience Node ---")
-    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
-    if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]
-    jd_text = state.get("jd_text", "") or ""
+    # Normalize parsed structure: accept either { "skills": {"score":..}} or {"skills_score":..}
+    def normalize_section(sec_name, parsed_obj):
+        sec = parsed_obj.get(sec_name, {}) or {}
+        # if top-level had "skills_score" style
+        score_key_alt = f"{sec_name}_score"
+        if isinstance(parsed_obj.get(score_key_alt), (int, float, str)):
+            score_val = parsed_obj.get(score_key_alt)
+            explanation_val = parsed_obj.get("explanation", "") or ""
+            return {f"{sec_name}_score": float(score_val), "explanation": explanation_val}
+        # if sec is a dict with keys 'score' and 'explanation'
+        if isinstance(sec, dict):
+            s = sec.get("score", sec.get(f"{sec_name}_score", 0))
+            e = sec.get("explanation", "")
+            return {f"{sec_name}_score": float(s) if isinstance(s, (int, float, str)) and str(s).replace('.', '', 1).isdigit() else 0, "explanation": e}
+        # fallback
+        return {f"{sec_name}_score": 0, "explanation": ""}
 
-    template_text = getattr(experience_prompt, "template", str(experience_prompt))
-    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
+    skills_parsed = normalize_section("skills", parsed)
+    experience_parsed = normalize_section("experience", parsed)
+    education_parsed = normalize_section("education", parsed)
+    projects_parsed = normalize_section("projects", parsed)
 
+    current_results = {
+        "skills": skills_parsed,
+        "experience": experience_parsed,
+        "education": education_parsed,
+        "projects": projects_parsed
+    }
 
-    response_str = call_gemini_api(prompt_text, category="experience")
-    parsed = _safe_parse_response(response_str, "experience")
-
-    if isinstance(parsed, dict):
-        parsed.setdefault("experience_score", parsed.get("score", 0))
-        parsed.setdefault("explanation", parsed.get("explanation", ""))
-    else:
-        parsed = {"experience_score": 0, "explanation": "Unexpected response type from Gemini."}
-
-    current_results = state.get("results", {}) or {}
-    current_results["experience"] = parsed
-    state["results"] = current_results
-    return {"results": current_results}
-
-def education_node(state: MatchingState):
-    print("--- Running Education Node ---")
-    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
-    if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]
-    jd_text = state.get("jd_text", "") or ""
-
-    template_text = getattr(education_prompt, "template", str(education_prompt))
-    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
-
-
-    response_str = call_gemini_api(prompt_text, category="education")
-    parsed = _safe_parse_response(response_str, "education")
-
-    if isinstance(parsed, dict):
-        parsed.setdefault("education_score", parsed.get("score", 0))
-        parsed.setdefault("explanation", parsed.get("explanation", ""))
-    else:
-        parsed = {"education_score": 0, "explanation": "Unexpected response type from Gemini."}
-
-    current_results = state.get("results", {}) or {}
-    current_results["education"] = parsed
-    state["results"] = current_results
-    return {"results": current_results}
-
-def projects_node(state: MatchingState):
-    print("--- Running Projects Node ---")
-    cv_text = state.get("cv_summary") or state.get("cv_text") or ""
-    if len(cv_text) > 12000:
-        cv_text = cv_text[:12000]
-    jd_text = state.get("jd_text", "") or ""
-
-    template_text = getattr(projects_prompt, "template", str(projects_prompt))
-    prompt_text = safe_format_template(template_text, jd_text=jd_text[:2000], cv_text=cv_text[:12000])
-
-
-    response_str = call_gemini_api(prompt_text, category="projects")
-    parsed = _safe_parse_response(response_str, "projects")
-
-    if isinstance(parsed, dict):
-        parsed.setdefault("projects_score", parsed.get("score", 0))
-        parsed.setdefault("explanation", parsed.get("explanation", ""))
-    else:
-        parsed = {"projects_score": 0, "explanation": "Unexpected response type from Gemini."}
-
-    current_results = state.get("results", {}) or {}
-    current_results["projects"] = parsed
-    state["results"] = current_results
     return {"results": current_results}
 
 # -----------------------------
-# Aggregate node
+# Aggregate node (unchanged)
 # -----------------------------
 def aggregate_node(state: MatchingState):
     print("--- Running Aggregate Node ---")
@@ -449,12 +351,12 @@ def aggregate_node(state: MatchingState):
         try:
             val = obj.get(key, fallback)
             if isinstance(val, (int, float)):
-                return val
+                return float(val)
             if isinstance(val, str) and val.replace('.', '', 1).isdigit():
-                return float(val) if '.' in val else int(val)
-            return fallback
+                return float(val) if '.' in val else float(int(val))
+            return float(fallback)
         except Exception:
-            return fallback
+            return float(fallback)
 
     scores = {
         "skills": safe_score(results.get("skills", {}), "skills_score", 0),
@@ -472,29 +374,23 @@ def aggregate_node(state: MatchingState):
             "skills": {"score": scores["skills"], "explanation": results.get("skills", {}).get("explanation", "") or ""},
             "experience": {"score": scores["experience"], "explanation": results.get("experience", {}).get("explanation", "") or ""},
             "education": {"score": scores["education"], "explanation": results.get("education", {}).get("explanation", "") or ""},
-            "projects": {"score": scores["projects"], "explanation": results.get("projects", {}).get("explanation", "") or ""}
+            "projects": {"score": scores["projects"], "explanation": results.get("projects", {}).get("explanation", "") or ""},
         }
     }
     return {"final_output": final_output}
 
 # -----------------------------
-# Graph setup
+# Graph setup (summarize -> combined -> aggregate)
 # -----------------------------
 def setup_graph():
     workflow = StateGraph(MatchingState)
     workflow.add_node("summarize", summarize_cv_node)
-    workflow.add_node("skills", skills_node)
-    workflow.add_node("experience", experience_node)
-    workflow.add_node("education", education_node)
-    workflow.add_node("projects", projects_node)
+    workflow.add_node("combined", combined_scoring_node)
     workflow.add_node("aggregate", aggregate_node)
 
     workflow.set_entry_point("summarize")
-    workflow.add_edge("summarize", "skills")
-    workflow.add_edge("skills", "experience")
-    workflow.add_edge("experience", "education")
-    workflow.add_edge("education", "projects")
-    workflow.add_edge("projects", "aggregate")
+    workflow.add_edge("summarize", "combined")
+    workflow.add_edge("combined", "aggregate")
     workflow.add_edge("aggregate", END)
 
     return workflow.compile()
